@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store
+Thumbs.db
+
+# Local lead/scan/usage stores. These contain real customer emails
+# (leads.json) and historical Places API spend (usage.json). Never commit.
+data/
