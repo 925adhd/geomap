@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type * as LeafletNS from "leaflet";
 import { generateGrid } from "@/lib/grid";
 import graysonGeometry from "@/lib/grayson-geometry.json";
-import { adminHeaders } from "@/lib/admin-token";
+import { adminHeaders, getAdminToken } from "@/lib/admin-token";
 import {
   gridLabel,
   type PlaceResult,
@@ -77,6 +78,23 @@ function esc(s: string | null | undefined): string {
 }
 
 export default function Page() {
+  // Client-side admin gate. The /admin URL itself is publicly routable
+  // (Vercel can't read localStorage), but without a token there's no
+  // reason to render any of the dashboard. We bounce non-admins to the
+  // public form before mount so they never see the UI flash. The API
+  // routes are still independently gated by ADMIN_TOKEN — this is just
+  // visual containment.
+  const router = useRouter();
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  useEffect(() => {
+    const token = getAdminToken();
+    if (!token) {
+      router.replace("/");
+      return;
+    }
+    setAuthed(true);
+  }, [router]);
+
   const mapEl = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletNS.Map | null>(null);
   const scanLayerRef = useRef<LeafletNS.LayerGroup | null>(null);
@@ -436,6 +454,10 @@ export default function Page() {
   }
 
   const summary = lastScan ? computeSummary(lastScan) : null;
+
+  // Auth check still pending or failed: render nothing. The useEffect
+  // above either flips authed=true or fires the redirect to /.
+  if (!authed) return null;
 
   return (
     <div className="app">
