@@ -33,6 +33,7 @@ const SCAN_CONCURRENCY = 5;
 
 const MAX_BUSINESS = 200;
 const MAX_EMAIL = 254;
+const MAX_NAME = 100;
 const MAX_PHONE = 40;
 const MAX_KEYWORD = 200;
 const MAX_NOTES = 1000;
@@ -44,6 +45,7 @@ type AutoScanBody = {
   step?: "resolve" | "scan";
   businessName?: string;
   email?: string;
+  name?: string;
   phone?: string;
   keyword?: string;
   notes?: string;
@@ -54,6 +56,7 @@ type AutoScanBody = {
 type FormFields = {
   businessName: string;
   email: string;
+  name?: string;
   phone?: string;
   keyword: string;
   notes?: string;
@@ -251,6 +254,7 @@ async function handleScan(
     timestamp,
     business_name: fields.businessName,
     email: fields.email,
+    name: fields.name ?? null,
     phone: fields.phone ?? null,
     keyword: fields.keyword,
     notes: fields.notes ?? null,
@@ -285,6 +289,7 @@ async function handleScan(
 function parseAndValidate(body: AutoScanBody): FormFields | { error: string } {
   const businessName = (body.businessName || "").trim().slice(0, MAX_BUSINESS);
   const email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
+  const name = body.name?.trim().slice(0, MAX_NAME) || undefined;
   const phone = body.phone?.trim().slice(0, MAX_PHONE) || undefined;
   const keyword = (body.keyword || "").trim().slice(0, MAX_KEYWORD);
   const notes = body.notes?.trim().slice(0, MAX_NOTES) || undefined;
@@ -295,7 +300,7 @@ function parseAndValidate(body: AutoScanBody): FormFields | { error: string } {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return { error: "Invalid email." };
   }
-  return { businessName, email, phone, keyword, notes };
+  return { businessName, email, name, phone, keyword, notes };
 }
 
 async function findExistingScanForEmail(
@@ -417,6 +422,7 @@ async function notifyOnSuccess(args: {
       <p style="margin:0 0 18px;color:#6a655a">${new Date(args.timestamp).toLocaleString()}</p>
       <table style="border-collapse:collapse;font-size:14px">
         <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Business</td><td style="padding:4px 0"><strong>${escapeHtml(fields.businessName)}</strong></td></tr>
+        ${fields.name ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Name</td><td style="padding:4px 0">${escapeHtml(fields.name)}</td></tr>` : ""}
         <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Email</td><td style="padding:4px 0"><a href="mailto:${encodeURIComponent(fields.email)}">${escapeHtml(fields.email)}</a></td></tr>
         ${fields.phone ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Phone</td><td style="padding:4px 0">${escapeHtml(fields.phone)}</td></tr>` : ""}
         <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Keyword</td><td style="padding:4px 0">${escapeHtml(fields.keyword)}</td></tr>

@@ -114,6 +114,10 @@ export default function Page() {
   const [lastScan, setLastScan] = useState<Scan | null>(null);
   const [allScans, setAllScans] = useState<Scan[]>([]);
   const [expandedBiz, setExpandedBiz] = useState<string | null>(null);
+  // In-page notice replaces the old alert() popups. `kind` controls the
+  // colour: "warn" for soft validation/save issues, "error" for hard
+  // failures the operator needs to read fully.
+  const [notice, setNotice] = useState<{ kind: "warn" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +259,7 @@ export default function Page() {
       );
       setCandidates(places);
     } catch (e) {
-      alert("Search failed: " + (e as Error).message);
+      setNotice({ kind: "error", text: "Search failed: " + (e as Error).message });
     } finally {
       setFinding(false);
     }
@@ -286,8 +290,15 @@ export default function Page() {
   }
 
   async function runScan(override?: { rows: number; cols: number; miles: number }) {
-    if (!target) return alert("Pick a business first.");
-    if (!keyword.trim()) return alert("Enter a keyword.");
+    if (!target) {
+      setNotice({ kind: "warn", text: "Pick a business first." });
+      return;
+    }
+    if (!keyword.trim()) {
+      setNotice({ kind: "warn", text: "Enter a keyword." });
+      return;
+    }
+    setNotice(null);
 
     const rows = override?.rows ?? gridRows;
     const cols = override?.cols ?? gridCols;
@@ -345,11 +356,13 @@ export default function Page() {
         results.push(result);
         addRankPin(result);
         if (i === 0) {
-          alert(
-            "First scan call failed: " +
+          setNotice({
+            kind: "error",
+            text:
+              "First scan call failed: " +
               msg +
-              "\n\nCheck .env.local has the key, billing enabled, Places API (New) enabled."
-          );
+              " — check that GOOGLE_PLACES_API_KEY is set, billing is enabled, and Places API (New) is on.",
+          });
           setScanning(false);
           setProgress({
             current: i + 1,
@@ -404,10 +417,12 @@ export default function Page() {
       });
       if (!res.ok) throw new Error("save failed");
     } catch (e) {
-      alert(
-        "Failed to save scan to server — it's still in memory for this session.\n" +
-          (e as Error).message
-      );
+      setNotice({
+        kind: "error",
+        text:
+          "Failed to save scan to server — it's still in memory for this session. " +
+          (e as Error).message,
+      });
     }
     setAllScans((prev) => {
       const filtered = prev.filter((s) => s.timestamp !== scan.timestamp);
@@ -468,6 +483,20 @@ export default function Page() {
             ?
           </Link>
         </h1>
+
+        {notice && (
+          <div className={`admin-notice admin-notice--${notice.kind}`} role="status">
+            <span>{notice.text}</span>
+            <button
+              type="button"
+              className="admin-notice-close"
+              aria-label="Dismiss"
+              onClick={() => setNotice(null)}
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         <section>
           <h2>Target Business</h2>

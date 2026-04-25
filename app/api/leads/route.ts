@@ -25,6 +25,7 @@ type Lead = {
   timestamp: string;
   businessName: string;
   email: string;
+  name?: string;
   phone?: string;
   keyword?: string;
   notes?: string;
@@ -36,6 +37,7 @@ type LeadRow = {
   timestamp: string;
   business_name: string;
   email: string;
+  name: string | null;
   phone: string | null;
   keyword: string | null;
   notes: string | null;
@@ -48,6 +50,7 @@ function rowToLead(r: LeadRow): Lead {
     timestamp: r.timestamp,
     businessName: r.business_name,
     email: r.email,
+    name: r.name ?? undefined,
     phone: r.phone ?? undefined,
     keyword: r.keyword ?? undefined,
     notes: r.notes ?? undefined,
@@ -69,6 +72,7 @@ async function emailLead(lead: Lead) {
       <p style="margin:0 0 18px;color:#6a655a">${new Date(lead.timestamp).toLocaleString()}</p>
       <table style="border-collapse:collapse;font-size:14px">
         <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Business</td><td style="padding:4px 0"><strong>${escapeHtml(lead.businessName)}</strong></td></tr>
+        ${lead.name ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Name</td><td style="padding:4px 0">${escapeHtml(lead.name)}</td></tr>` : ""}
         <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Email</td><td style="padding:4px 0"><a href="mailto:${encodeURIComponent(lead.email)}">${escapeHtml(lead.email)}</a></td></tr>
         ${lead.phone ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Phone</td><td style="padding:4px 0">${escapeHtml(lead.phone)}</td></tr>` : ""}
         ${lead.keyword ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Keyword</td><td style="padding:4px 0">${escapeHtml(lead.keyword)}</td></tr>` : ""}
@@ -144,6 +148,7 @@ export async function POST(req: NextRequest) {
 
   const businessName = (body.businessName || "").trim().slice(0, MAX_BUSINESS);
   const email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
+  const name = body.name?.trim().slice(0, 100) || undefined;
   const phone = body.phone?.trim().slice(0, MAX_PHONE) || undefined;
   const keyword = body.keyword?.trim().slice(0, MAX_KEYWORD) || undefined;
   const notes = body.notes?.trim().slice(0, MAX_NOTES) || undefined;
@@ -210,6 +215,7 @@ export async function POST(req: NextRequest) {
     timestamp: new Date().toISOString(),
     businessName,
     email,
+    name,
     phone,
     keyword,
     notes,
@@ -226,6 +232,7 @@ export async function POST(req: NextRequest) {
     timestamp: newLead.timestamp,
     business_name: newLead.businessName,
     email: newLead.email,
+    name: newLead.name ?? null,
     phone: newLead.phone ?? null,
     keyword: newLead.keyword ?? null,
     notes: newLead.notes ?? null,

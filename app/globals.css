@@ -337,6 +337,44 @@ progress { width: 100%; height: 6px; }
 }
 .report-btn:hover { background: linear-gradient(180deg, #3b82f6, #2563eb); }
 
+/* Admin in-sidebar notice — replaces blocking browser alert() popups for
+   validation/save errors. Two kinds: warn (light) and error (destructive). */
+.admin-notice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  padding: 10px 10px 10px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #f8fafc;
+}
+.admin-notice--warn {
+  background: rgba(212, 160, 23, 0.18);
+  border: 1px solid rgba(212, 160, 23, 0.35);
+  color: #fde68a;
+}
+.admin-notice--error {
+  background: rgba(220, 38, 38, 0.18);
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  color: #fecaca;
+}
+.admin-notice span { flex: 1; }
+.admin-notice-close {
+  background: transparent !important;
+  border: none !important;
+  color: inherit !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+  padding: 0 4px !important;
+  margin: 0 !important;
+  width: auto !important;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.admin-notice-close:hover { opacity: 1 !important; }
+
 .legend-item { display: flex; align-items: center; gap: 4px; }
 .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
 

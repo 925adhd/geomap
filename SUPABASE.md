@@ -23,13 +23,14 @@ Serves as the source of truth when there's no CLI link to the project.
 
 ### `leads`
 Audit form submissions from the public site. Read by the admin dashboard,
-written by `POST /api/leads`.
+written by `POST /api/leads` and `POST /api/auto-scan`.
 
 | column        | type         | notes                                  |
 |---------------|--------------|----------------------------------------|
 | timestamp     | timestamptz  | primary key (ISO from API route)       |
 | business_name | text         | not null                               |
 | email         | text         | not null, lowercased                   |
+| name          | text         | nullable — visitor's first name (optional on form) |
 | phone         | text         | nullable                               |
 | keyword       | text         | nullable                               |
 | notes         | text         | nullable                               |
@@ -126,5 +127,4 @@ When the schema changes:
 2. Edit this file's table section to match.
 3. Bump the "Last verified" date below.
 
-Last verified: 2026-04-25 (renamed cost columns to match actual Google
-SKUs: pro_calls + enterprise_atmosphere_calls)
+Last verified: 2026-04-25 (added optional `name` column to leads)

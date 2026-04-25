@@ -67,6 +67,7 @@ export default function AuditPage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [keyword, setKeyword] = useState("");
   const [notes, setNotes] = useState("");
@@ -114,6 +115,7 @@ export default function AuditPage() {
           step: "resolve",
           businessName,
           email,
+          name: name || undefined,
           phone: phone || undefined,
           keyword,
           notes: notes || undefined,
@@ -183,6 +185,7 @@ export default function AuditPage() {
           step: "scan",
           businessName,
           email,
+          name: name || undefined,
           phone: phone || undefined,
           keyword,
           notes: notes || undefined,
@@ -200,9 +203,7 @@ export default function AuditPage() {
       if (!res.ok || !data.reportPath) {
         const msg =
           data.error ||
-          (res.status === 429
-            ? "Too many requests. Please try again later."
-            : `Something went wrong (HTTP ${res.status}). Please try again.`);
+          "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.";
         setStatus("error");
         setError(msg);
         return;
@@ -377,7 +378,31 @@ export default function AuditPage() {
                   />
                 </label>
 
+                <label>
+                  Keyword to track
+                  <input
+                    type="text"
+                    required
+                    value={keyword}
+                    onChange={(e) => setKeyword(e.target.value)}
+                    placeholder="e.g., hvac near me"
+                    disabled={isBusy}
+                  />
+                </label>
+
                 <div className="au-row">
+                  <label>
+                    Your name <span className="au-opt">(optional)</span>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="First name"
+                      autoComplete="given-name"
+                      disabled={isBusy}
+                    />
+                  </label>
+
                   <label>
                     Phone <span className="au-opt">(optional)</span>
                     <input
@@ -386,18 +411,6 @@ export default function AuditPage() {
                       onChange={(e) => setPhone(e.target.value)}
                       placeholder="(270) 555-0000"
                       autoComplete="tel"
-                      disabled={isBusy}
-                    />
-                  </label>
-
-                  <label>
-                    Keyword to track
-                    <input
-                      type="text"
-                      required
-                      value={keyword}
-                      onChange={(e) => setKeyword(e.target.value)}
-                      placeholder="e.g., hvac near me"
                       disabled={isBusy}
                     />
                   </label>
