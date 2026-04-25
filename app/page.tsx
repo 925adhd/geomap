@@ -436,21 +436,25 @@ export default function AuditPage() {
                 {error && <div className="au-error">{error}</div>}
 
                 <p className="au-fine">
-                  No credit card. No subscription. One free audit per email.
+                  No credit card. No subscription.
                   <br />
                   <strong>
                     Your business must have a Google Business Profile
                   </strong>
                   , ideally with a handful of reviews. Brand-new or unlisted
-                  businesses won&rsquo;t produce useful data yet.{" "}
-                  <a
-                    href="https://business.google.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Create one here
-                  </a>
-                  .
+                  businesses won&rsquo;t produce useful data yet.
+                  {/* GBP link gets its own line on mobile via .au-fine-gbp
+                      so it doesn't dangle as orphaned text after a wrap. */}
+                  <span className="au-fine-gbp">
+                    <a
+                      href="https://business.google.com"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Create one here
+                    </a>
+                    .
+                  </span>
                 </p>
               </form>
             </>
@@ -470,7 +474,7 @@ export default function AuditPage() {
                 We&rsquo;ll run the 49-point scan against this Google
                 Business Profile and the keyword{" "}
                 <em>&ldquo;{keyword}&rdquo;</em>. Make sure it&rsquo;s
-                yours — you only get one free scan per email.
+                yours — your audit will be tied to this match.
               </p>
               <div className="au-confirm-actions">
                 <button

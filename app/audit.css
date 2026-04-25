@@ -385,6 +385,13 @@ a.fl-upsell:hover {
   line-height: 1.6;
 }
 .au-fine a { color: var(--fl-emerald); text-decoration: underline; }
+.au-fine-gbp { display: inline; }
+@media (max-width: 760px) {
+  /* On phones the "Create one here." link tends to dangle on its own
+     wrapped line as one or two words. Forcing the whole "Create one
+     here." onto its own row makes it scan as a proper CTA. */
+  .au-fine-gbp { display: block; margin-top: 6px; }
+}
 
 /* --- Scanning state (replaces old thank-you screen) --- */
 .au-thanks {
