@@ -41,17 +41,25 @@ Indexes:
 - `leads_ip_idx` on `(ip, timestamp desc)` — daily 3/IP rate limit
 
 ### `scans`
-Full scan payload as JSONB. Written by `POST /api/scans` (admin-only),
-read by `GET /api/scans` and the public report page
-`/report/[timestamp]`.
+Full scan payload as JSONB. Written by `POST /api/scans` (admin-only)
+and `POST /api/auto-scan` (public auto-audit), read by `GET /api/scans`
+and the public report page `/report/[timestamp]`.
 
-| column    | type         | notes                          |
-|-----------|--------------|--------------------------------|
-| timestamp | timestamptz  | primary key                    |
-| payload   | jsonb        | not null — full Scan object    |
+| column              | type           | notes                                  |
+|---------------------|----------------|----------------------------------------|
+| timestamp           | timestamptz    | primary key                            |
+| payload             | jsonb          | not null — full Scan object            |
+| essentials_calls    | integer        | not null default 0 — Places Essentials calls this scan made |
+| enterprise_calls    | integer        | not null default 0 — Places Enterprise calls this scan made |
+| estimated_cost_usd  | numeric(8,4)   | not null default 0 — what this scan would cost outside the free tier |
 
 Indexes:
 - `scans_timestamp_idx` on `(timestamp desc)`
+
+Cost columns are populated at save time so each row records what the
+scan actually cost. Sort by `estimated_cost_usd desc` in the Supabase
+table editor to spot expensive scans; sum it for monthly totals. Rows
+saved before this column was added show `0` (we didn't track them).
 
 ### `usage`
 One row per UTC month. Tracks Places API call volume so `/api/places`
@@ -103,4 +111,4 @@ When the schema changes:
 2. Edit this file's table section to match.
 3. Bump the "Last verified" date below.
 
-Last verified: 2026-04-25 (auto-scan flow added; no schema change)
+Last verified: 2026-04-25 (added per-scan cost columns to scans table)

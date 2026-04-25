@@ -290,6 +290,11 @@ export default function Page() {
     scanLayerRef.current?.clearLayers();
 
     const results: ScanPoint[] = [];
+    // Per-scan API call counters. Each grid call goes through /api/places
+    // without includeRatings (Essentials tier), so we count essentials only.
+    // Calls that throw "budget_exceeded" before hitting Google don't count;
+    // any other error happened post-fetch and does count.
+    let essentialsCalls = 0;
     for (let i = 0; i < points.length; i++) {
       const pt = points[i];
       setProgress({
@@ -305,6 +310,7 @@ export default function Page() {
           5000,
           20
         );
+        essentialsCalls += 1;
         const rank = findRank(places, target.placeId);
         const topResult = places[0]?.displayName?.text || null;
         const topThree = places
@@ -316,6 +322,7 @@ export default function Page() {
         addRankPin(result);
       } catch (e) {
         const msg = (e as Error).message;
+        if (!msg.toLowerCase().includes("budget")) essentialsCalls += 1;
         const result: ScanPoint = { ...pt, rank: null, error: msg };
         results.push(result);
         addRankPin(result);
@@ -352,7 +359,7 @@ export default function Page() {
       points: results,
     };
     setLastScan(scan);
-    await saveScanToServer(scan);
+    await saveScanToServer(scan, { essentialsCalls, enterpriseCalls: 0 });
     drawTargetMarker(target);
 
     setProgress({
@@ -363,12 +370,19 @@ export default function Page() {
     setScanning(false);
   }
 
-  async function saveScanToServer(scan: Scan) {
+  async function saveScanToServer(
+    scan: Scan,
+    counts?: { essentialsCalls: number; enterpriseCalls: number }
+  ) {
     try {
       const res = await fetch("/api/scans", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify(scan),
+        body: JSON.stringify({
+          scan,
+          essentialsCalls: counts?.essentialsCalls ?? 0,
+          enterpriseCalls: counts?.enterpriseCalls ?? 0,
+        }),
       });
       if (!res.ok) throw new Error("save failed");
     } catch (e) {

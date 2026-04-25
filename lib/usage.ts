@@ -15,6 +15,19 @@ const ESSENTIALS_RATE_PER_CALL = 5 / 1000;
 const ENTERPRISE_FREE = 1_000;
 const ENTERPRISE_RATE_PER_CALL = 35 / 1000;
 
+// Per-scan cost estimate, ignoring the monthly free tier. Used to populate
+// the per-scan cost column so each row reflects what the scan would cost
+// a paying customer; the global usage counter handles real spend tracking.
+export function costForCalls(
+  essentialsCalls: number,
+  enterpriseCalls: number
+): number {
+  return (
+    essentialsCalls * ESSENTIALS_RATE_PER_CALL +
+    enterpriseCalls * ENTERPRISE_RATE_PER_CALL
+  );
+}
+
 type Usage = {
   month: string; // "YYYY-MM" UTC
   essentialsCalls: number;

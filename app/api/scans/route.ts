@@ -2,8 +2,31 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Scan } from "@/lib/types";
 import { requireAdmin } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
+import { costForCalls } from "@/lib/usage";
 
-type ScanRow = { timestamp: string; payload: Scan };
+type SaveBody =
+  | Scan
+  | {
+      scan: Scan;
+      essentialsCalls?: number;
+      enterpriseCalls?: number;
+    };
+
+function unwrap(body: SaveBody): {
+  scan: Scan;
+  essentialsCalls: number;
+  enterpriseCalls: number;
+} {
+  if ("scan" in body && body.scan) {
+    return {
+      scan: body.scan,
+      essentialsCalls: Math.max(0, Math.floor(body.essentialsCalls ?? 0)),
+      enterpriseCalls: Math.max(0, Math.floor(body.enterpriseCalls ?? 0)),
+    };
+  }
+  // Legacy shape: bare Scan in the body. Cost columns get 0.
+  return { scan: body as Scan, essentialsCalls: 0, enterpriseCalls: 0 };
+}
 
 // All scan-store endpoints are admin-only. The public /report/[timestamp]
 // page reads from Supabase directly server-side (see app/report/[timestamp]/
@@ -28,14 +51,22 @@ export async function POST(req: NextRequest) {
   const denied = requireAdmin(req);
   if (denied) return denied;
 
-  const scan = (await req.json()) as Scan;
+  const body = (await req.json()) as SaveBody;
+  const { scan, essentialsCalls, enterpriseCalls } = unwrap(body);
   if (!scan?.timestamp || !scan?.target?.placeId) {
     return NextResponse.json({ error: "Invalid scan payload" }, { status: 400 });
   }
-  const row: ScanRow = { timestamp: scan.timestamp, payload: scan };
-  const { error } = await supabase()
-    .from("scans")
-    .upsert(row, { onConflict: "timestamp" });
+  const estimatedCostUsd = costForCalls(essentialsCalls, enterpriseCalls);
+  const { error } = await supabase().from("scans").upsert(
+    {
+      timestamp: scan.timestamp,
+      payload: scan,
+      essentials_calls: essentialsCalls,
+      enterprise_calls: enterpriseCalls,
+      estimated_cost_usd: estimatedCostUsd,
+    },
+    { onConflict: "timestamp" }
+  );
   if (error) {
     console.error("[scans] POST failed:", error);
     return NextResponse.json({ error: "Save failed" }, { status: 500 });

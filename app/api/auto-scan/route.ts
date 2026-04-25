@@ -3,6 +3,7 @@ import { corsHeaders, preflight, rejectDisallowedOrigin } from "@/lib/cors";
 import { supabase } from "@/lib/supabase";
 import { generateGrid } from "@/lib/grid";
 import { PlacesApiError, PlacesBudgetError, searchPlaces } from "@/lib/places";
+import { costForCalls } from "@/lib/usage";
 import type { PlaceResult, Scan, ScanPoint, TargetBusiness } from "@/lib/types";
 
 // Public auto-audit endpoint. Two-phase to avoid scanning the wrong
@@ -213,11 +214,29 @@ async function handleScan(
     points,
   };
 
+  // Auto-scan call accounting: 1 Essentials call for the resolve + one per
+  // grid point that actually hit Google. Errors thrown inside the batch
+  // (network, HTTP, parse) all happened post-fetch, so they count.
+  // PlacesBudgetError aborts before any save happens, so we never reach here
+  // with an under-counted scan.
+  const essentialsCalls = 1 + grid.length;
+  const enterpriseCalls = 0;
+  const estimatedCostUsd = costForCalls(essentialsCalls, enterpriseCalls);
+
   // Save scan first; if that fails the lead is useless to us (no report to
   // link to) so we'd rather surface the error than save an orphan lead.
   const { error: scanErr } = await supabase()
     .from("scans")
-    .upsert({ timestamp, payload: scan }, { onConflict: "timestamp" });
+    .upsert(
+      {
+        timestamp,
+        payload: scan,
+        essentials_calls: essentialsCalls,
+        enterprise_calls: enterpriseCalls,
+        estimated_cost_usd: estimatedCostUsd,
+      },
+      { onConflict: "timestamp" }
+    );
   if (scanErr) {
     console.error("[auto-scan/scan] scan save failed:", scanErr);
     return jsonError(req, 500, "Couldn't save scan.");
