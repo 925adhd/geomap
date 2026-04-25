@@ -1592,6 +1592,162 @@ progress { width: 100%; height: 6px; }
   font-weight: 600;
 }
 
+/* --- Report — mobile responsive ---
+   Targets phones (~<760px). Collapses every multi-column grid, slashes
+   the desktop document paddings, scales the display-font numerics down
+   to readable sizes, and forces long names in the rivals list to wrap
+   instead of clipping. */
+@media (max-width: 760px) {
+  .rp { padding: 16px 12px 48px; }
+  .rp-toolbar {
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .rp-doc {
+    padding: 32px 22px 28px;
+    border-radius: 4px;
+  }
+
+  .rp-head {
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 9px;
+    padding-bottom: 10px;
+  }
+  .rp-title { font-size: 22px; margin: 14px 0 26px; }
+  .rp-biz { font-size: 36px; margin-bottom: 16px; }
+  .rp-subject { margin-bottom: 28px; }
+  .rp-subject-meta {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .rp-summary {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 22px 0 24px;
+    margin: 24px 0;
+  }
+  .rp-score-block {
+    justify-content: center;
+    gap: 10px;
+  }
+  .rp-score-num { font-size: 84px; }
+  .rp-pullquote {
+    font-size: 16px;
+    padding-left: 14px;
+  }
+
+  .rp-stats {
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 32px;
+  }
+  .rp-stat {
+    padding: 14px 12px;
+    border-right: 1px solid var(--rp-rule);
+    border-bottom: 1px solid var(--rp-rule);
+  }
+  .rp-stat:nth-child(2n) { border-right: none; }
+  .rp-stat:nth-child(n + 3) { border-bottom: none; }
+  .rp-stat-val { font-size: 32px; }
+  .rp-stat-val span { font-size: 14px; }
+
+  .rp-context-note {
+    margin: -12px 0 32px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+  }
+
+  .rp-h3 { font-size: 20px; }
+  .rp-caption { font-size: 12px; }
+
+  .rp-realmap { aspect-ratio: 1 / 1; }
+  .rp-map-legend {
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    font-size: 10.5px;
+  }
+
+  .rp-rivals li {
+    grid-template-columns: 32px 1fr;
+    grid-template-areas:
+      "rank name"
+      "rank bar"
+      ".    count";
+    row-gap: 4px;
+    column-gap: 12px;
+    padding: 12px 0;
+    font-size: 13px;
+  }
+  .rp-rival-rank { grid-area: rank; align-self: start; }
+  .rp-rival-name {
+    grid-area: name;
+    white-space: normal;
+    overflow: visible;
+    line-height: 1.3;
+  }
+  .rp-rival-bar-wrap { grid-area: bar; }
+  .rp-rival-count {
+    grid-area: count;
+    text-align: left;
+    font-size: 11px;
+  }
+
+  .rp-takeaway-section { margin-bottom: 32px; }
+  .rp-takeaway-body { font-size: 13.5px; }
+
+  .rp-recommendation {
+    padding: 18px 18px;
+    margin-bottom: 32px;
+  }
+  .rp-recommendation p { font-size: 16px; }
+
+  .rp-cta {
+    margin-top: 36px;
+    padding: 24px 22px 22px;
+    border-left-width: 4px;
+  }
+  .rp-cta-header h3 { font-size: 22px; }
+  .rp-cta-header p { font-size: 13px; }
+  .rp-cta-offers {
+    grid-template-columns: 1fr;
+  }
+  .rp-cta-offer {
+    border-right: none;
+    border-bottom: 1px solid #3a342b;
+  }
+  .rp-cta-offer:last-child { border-bottom: none; }
+  .rp-cta-feature {
+    border-left: 2px solid var(--rp-mustard);
+    margin-left: 0;
+  }
+  .rp-cta-price { font-size: 36px; }
+  .rp-cta-contact {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding-top: 18px;
+  }
+
+  .rp-foot {
+    margin-top: 36px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 420px) {
+  .rp-doc { padding: 24px 16px 22px; }
+  .rp-biz { font-size: 30px; }
+  .rp-score-num { font-size: 72px; }
+  .rp-stat-val { font-size: 28px; }
+  .rp-pullquote { font-size: 15px; }
+  .rp-cta { padding: 20px 16px 18px; }
+  .rp-cta-header h3 { font-size: 19px; }
+}
+
 /* --- Print media query --- */
 @media print {
   @page { size: letter; margin: 0.5in; }

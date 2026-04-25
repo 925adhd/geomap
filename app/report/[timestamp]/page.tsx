@@ -182,9 +182,6 @@ export default async function ReportPage({
     <div className={`${fraunces.variable} ${plex.variable} rp`}>
       <div className="rp-toolbar no-print">
         <PrintButton />
-        <span className="rp-hint">
-          Use your browser&rsquo;s print dialog → &ldquo;Save as PDF&rdquo;
-        </span>
       </div>
 
       <article className="rp-doc">

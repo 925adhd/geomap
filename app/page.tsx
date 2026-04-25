@@ -1,879 +1,528 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
-import type * as LeafletNS from "leaflet";
-import { generateGrid } from "@/lib/grid";
-import graysonGeometry from "@/lib/grayson-geometry.json";
-import { adminHeaders } from "@/lib/admin-token";
-import {
-  gridLabel,
-  type PlaceResult,
-  type TargetBusiness,
-  type Scan,
-  type ScanPoint,
-} from "@/lib/types";
+import { useRouter } from "next/navigation";
+import { Playfair_Display, Inter } from "next/font/google";
+import "./audit.css";
 
-const GRAYSON_CENTER: [number, number] = [37.4789, -86.3408];
-const STORAGE = {
-  business: "gct_target_business",
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-playfair",
+  display: "swap",
+});
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-inter",
+  display: "swap",
+});
+
+type Status =
+  | "idle"
+  | "resolving"
+  | "confirming"
+  | "scanning"
+  | "redirecting"
+  | "error";
+
+type ResolvedTarget = {
+  placeId: string;
+  name: string;
+  address: string;
+  location: { latitude: number; longitude: number } | null;
 };
 
-async function searchPlaces(
-  query: string,
-  lat: number,
-  lng: number,
-  radiusMeters: number,
-  maxResults: number,
-  includeRatings = false
-): Promise<PlaceResult[]> {
-  const res = await fetch("/api/places", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      textQuery: query,
-      lat,
-      lng,
-      radius: radiusMeters,
-      maxResults,
-      includeRatings,
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${res.status}`);
-  }
-  const data = await res.json();
-  return data.places || [];
-}
+// The grid is 49 calls; the server runs them with 5-way concurrency and
+// usually finishes in 5–15s. The progress bar here is decorative — it
+// asymptotes to ~92% so we never look "stuck at 100" before the server
+// actually returns.
+const PROGRESS_DURATION_MS = 22_000;
 
-function findRank(places: PlaceResult[], targetPlaceId: string): number | null {
-  for (let i = 0; i < places.length; i++) {
-    if (places[i].id === targetPlaceId) return i + 1;
-  }
-  return null;
-}
-
-function rankColor(rank: number | null): string {
-  if (rank === null) return "#dc2626";
-  if (rank <= 3) return "#16a34a";
-  if (rank <= 10) return "#eab308";
-  return "#f97316";
-}
-
-function esc(s: string | null | undefined): string {
-  if (s == null) return "";
-  return String(s).replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[c]!
+function MapMockup() {
+  return (
+    <figure
+      className="fl-mockup"
+      aria-label="Sample local rank heatmap report for a Grayson County, Kentucky car dealership"
+    >
+      <div className="fl-mockup-tag">ACTUAL REPORT · LEITCHFIELD, KY</div>
+      <img
+        src="/audit-sample-heatmap.webp"
+        alt="Sample local rank heatmap showing a Leitchfield car dealership ranking #2 at its own location with surrounding points ranging from top 3 to not found, plus a top competitors breakdown"
+        width={810}
+        height={970}
+        loading="eager"
+        fetchPriority="high"
+        className="fl-mockup-image"
+      />
+      <figcaption className="fl-mockup-caption">
+        Real heatmap from a car dealership right here in Leitchfield, KY.
+        Your map will use your business and the keyword you choose. Map ©
+        OpenStreetMap contributors. Ranking data powered by Google.
+      </figcaption>
+    </figure>
   );
 }
 
-export default function Page() {
-  const mapEl = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<LeafletNS.Map | null>(null);
-  const scanLayerRef = useRef<LeafletNS.LayerGroup | null>(null);
-  const targetMarkerRef = useRef<LeafletNS.Marker | null>(null);
-  const leafletRef = useRef<typeof LeafletNS | null>(null);
-
-  const [target, setTarget] = useState<TargetBusiness | null>(null);
-  const [candidates, setCandidates] = useState<PlaceResult[] | null>(null);
-  const [businessQuery, setBusinessQuery] = useState("");
+export default function AuditPage() {
+  const router = useRouter();
+  const [businessName, setBusinessName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [gridRows, setGridRows] = useState(7);
-  const [gridCols, setGridCols] = useState(7);
-  const [radiusMiles, setRadiusMiles] = useState(15);
-  const [finding, setFinding] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0, text: "" });
-  const [lastScan, setLastScan] = useState<Scan | null>(null);
-  const [allScans, setAllScans] = useState<Scan[]>([]);
-  const [expandedBiz, setExpandedBiz] = useState<string | null>(null);
+  const [notes, setNotes] = useState("");
+  const [honeypot, setHoneypot] = useState("");
+  const [status, setStatus] = useState<Status>("idle");
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [target, setTarget] = useState<ResolvedTarget | null>(null);
+  const startedAt = useRef<number>(0);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const L = await import("leaflet");
-      if (cancelled || !mapEl.current || mapRef.current) return;
-      leafletRef.current = L;
+    if (status !== "scanning") return;
+    startedAt.current = Date.now();
+    const id = setInterval(() => {
+      const elapsed = Date.now() - startedAt.current;
+      const pct = 92 * (1 - Math.exp(-elapsed / (PROGRESS_DURATION_MS / 3)));
+      setProgress(pct);
+    }, 200);
+    return () => clearInterval(id);
+  }, [status]);
 
-      const map = L.map(mapEl.current, { zoomControl: true }).setView(
-        GRAYSON_CENTER,
-        11
-      );
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap",
-        maxZoom: 19,
-      }).addTo(map);
-      L.geoJSON(graysonGeometry as GeoJSON.GeometryObject, {
-        style: {
-          color: "#3b82f6",
-          weight: 2,
-          opacity: 0.8,
-          fillColor: "#3b82f6",
-          fillOpacity: 0.06,
-        },
-      }).addTo(map);
-      const scanLayer = L.layerGroup().addTo(map);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (status === "resolving" || status === "scanning" || status === "redirecting") return;
+    setError(null);
 
-      mapRef.current = map;
-      scanLayerRef.current = scanLayer;
+    if (honeypot) {
+      // Honeypot tripped: pretend success silently. Bots never get a report.
+      setStatus("redirecting");
+      return;
+    }
 
-      const storedBiz = localStorage.getItem(STORAGE.business);
-      if (storedBiz) {
-        const t: TargetBusiness = JSON.parse(storedBiz);
-        setTarget(t);
-        drawTargetMarker(t);
-      }
-      await migrateLocalStorageScans();
-      try {
-        const res = await fetch("/api/scans", { headers: adminHeaders() });
-        if (res.ok) {
-          const { scans } = await res.json();
-          if (!cancelled) {
-            setAllScans(scans || []);
-            if (scans?.[0]) {
-              setLastScan(scans[0]);
-              renderScanPins(scans[0]);
-              if (scans[0].target) drawTargetMarker(scans[0].target);
-            }
-          }
-        }
-      } catch {
-        /* ignore load errors — empty state */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!keyword.trim()) {
+      setError("Please add the keyword you want tracked (e.g. 'plumber near me').");
+      return;
+    }
 
-  function drawTargetMarker(t: TargetBusiness) {
-    const L = leafletRef.current;
-    const map = mapRef.current;
-    if (!L || !map || !t.location) return;
-    if (targetMarkerRef.current) map.removeLayer(targetMarkerRef.current);
-    targetMarkerRef.current = L.marker(
-      [t.location.latitude, t.location.longitude],
-      {
-        icon: L.divIcon({
-          className: "target-pin",
-          html: '<div class="target-pin-inner"></div>',
-          iconSize: [22, 22],
-          iconAnchor: [11, 11],
-        }),
-        zIndexOffset: 1000,
-      }
-    )
-      .addTo(map)
-      .bindTooltip(t.name);
-  }
+    setStatus("resolving");
 
-  function addRankPin(pt: ScanPoint) {
-    const L = leafletRef.current;
-    const scanLayer = scanLayerRef.current;
-    if (!L || !scanLayer) return;
-    const errored = !!pt.error;
-    const color = errored ? "#64748b" : rankColor(pt.rank);
-    const label = errored ? "!" : pt.rank === null ? "20+" : String(pt.rank);
-    const topList =
-      pt.topThree && pt.topThree.length > 0
-        ? pt.topThree
-        : pt.topResult
-          ? [pt.topResult]
-          : [];
-    const topBlock =
-      topList.length > 0
-        ? `<div class="tt-top">Top ${topList.length} here:</div>` +
-          topList
-            .map(
-              (name, i) =>
-                `<div class="tt-row"><span class="tt-rank">${i + 1}</span>${esc(name)}</div>`
-            )
-            .join("")
-        : "";
-    const tooltip = errored
-      ? "Error: " + esc(pt.error)
-      : `<div class="tt-head">Rank: ${pt.rank === null ? "Not found in top 20" : "#" + pt.rank}</div>` +
-        topBlock;
-    L.marker([pt.lat, pt.lng], {
-      icon: L.divIcon({
-        className: "rank-pin",
-        html: `<div class="rank-pin-inner" style="background:${color}">${label}</div>`,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-      }),
-    })
-      .addTo(scanLayer)
-      .bindTooltip(tooltip);
-  }
-
-  function renderScanPins(scan: Scan) {
-    const scanLayer = scanLayerRef.current;
-    if (!scanLayer) return;
-    scanLayer.clearLayers();
-    scan.points.forEach(addRankPin);
-  }
-
-  async function findBusiness() {
-    if (!businessQuery.trim()) return;
-    setFinding(true);
-    setCandidates(null);
     try {
-      const places = await searchPlaces(
-        businessQuery.trim(),
-        GRAYSON_CENTER[0],
-        GRAYSON_CENTER[1],
-        30000,
-        10,
-        true
-      );
-      setCandidates(places);
-    } catch (e) {
-      alert("Search failed: " + (e as Error).message);
-    } finally {
-      setFinding(false);
-    }
-  }
-
-  function lockBusiness(place: PlaceResult) {
-    const t: TargetBusiness = {
-      placeId: place.id,
-      name: place.displayName?.text || "Unknown",
-      address: place.formattedAddress || "",
-      location: place.location || null,
-    };
-    localStorage.setItem(STORAGE.business, JSON.stringify(t));
-    setTarget(t);
-    setCandidates(null);
-    setBusinessQuery("");
-    drawTargetMarker(t);
-  }
-
-  function changeBusiness() {
-    localStorage.removeItem(STORAGE.business);
-    setTarget(null);
-    const map = mapRef.current;
-    if (map && targetMarkerRef.current) {
-      map.removeLayer(targetMarkerRef.current);
-      targetMarkerRef.current = null;
-    }
-  }
-
-  async function runScan(override?: { rows: number; cols: number; miles: number }) {
-    if (!target) return alert("Pick a business first.");
-    if (!keyword.trim()) return alert("Enter a keyword.");
-
-    const rows = override?.rows ?? gridRows;
-    const cols = override?.cols ?? gridCols;
-    const miles = override?.miles ?? radiusMiles;
-    if (override) {
-      setGridRows(rows);
-      setGridCols(cols);
-      setRadiusMiles(miles);
-    }
-
-    const radiusKm = miles * 1.609344;
-    const scanCenter: [number, number] = target.location
-      ? [target.location.latitude, target.location.longitude]
-      : GRAYSON_CENTER;
-    const points = generateGrid(scanCenter, radiusKm, rows, cols);
-    setScanning(true);
-    setProgress({ current: 0, total: points.length, text: "Starting…" });
-    scanLayerRef.current?.clearLayers();
-
-    const results: ScanPoint[] = [];
-    // Per-scan API call counters. Each grid call goes through /api/places
-    // without includeRatings (Essentials tier), so we count essentials only.
-    // Calls that throw "budget_exceeded" before hitting Google don't count;
-    // any other error happened post-fetch and does count.
-    let essentialsCalls = 0;
-    for (let i = 0; i < points.length; i++) {
-      const pt = points[i];
-      setProgress({
-        current: i,
-        total: points.length,
-        text: `Point ${i + 1}/${points.length}…`,
-      });
-      try {
-        const places = await searchPlaces(
-          keyword.trim(),
-          pt.lat,
-          pt.lng,
-          5000,
-          20
-        );
-        essentialsCalls += 1;
-        const rank = findRank(places, target.placeId);
-        const topResult = places[0]?.displayName?.text || null;
-        const topThree = places
-          .slice(0, 3)
-          .map((p) => p.displayName?.text)
-          .filter((n): n is string => !!n);
-        const result: ScanPoint = { ...pt, rank, topResult, topThree };
-        results.push(result);
-        addRankPin(result);
-      } catch (e) {
-        const msg = (e as Error).message;
-        if (!msg.toLowerCase().includes("budget")) essentialsCalls += 1;
-        const result: ScanPoint = { ...pt, rank: null, error: msg };
-        results.push(result);
-        addRankPin(result);
-        if (i === 0) {
-          alert(
-            "First scan call failed: " +
-              msg +
-              "\n\nCheck .env.local has the key, billing enabled, Places API (New) enabled."
-          );
-          setScanning(false);
-          setProgress({
-            current: i + 1,
-            total: points.length,
-            text: "Aborted.",
-          });
-          return;
-        }
-      }
-      setProgress({
-        current: i + 1,
-        total: points.length,
-        text: `Point ${i + 1}/${points.length}…`,
-      });
-    }
-
-    const scan: Scan = {
-      timestamp: new Date().toISOString(),
-      target,
-      keyword: keyword.trim(),
-      gridRows: rows,
-      gridCols: cols,
-      radiusMiles: miles,
-      center: scanCenter,
-      points: results,
-    };
-    setLastScan(scan);
-    await saveScanToServer(scan, { essentialsCalls, enterpriseCalls: 0 });
-    drawTargetMarker(target);
-
-    setProgress({
-      current: points.length,
-      total: points.length,
-      text: `Done. ${results.length} points scanned.`,
-    });
-    setScanning(false);
-  }
-
-  async function saveScanToServer(
-    scan: Scan,
-    counts?: { essentialsCalls: number; enterpriseCalls: number }
-  ) {
-    try {
-      const res = await fetch("/api/scans", {
+      const res = await fetch("/api/auto-scan", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scan,
-          essentialsCalls: counts?.essentialsCalls ?? 0,
-          enterpriseCalls: counts?.enterpriseCalls ?? 0,
+          step: "resolve",
+          businessName,
+          email,
+          phone: phone || undefined,
+          keyword,
+          notes: notes || undefined,
+          honeypot: honeypot || undefined,
         }),
       });
-      if (!res.ok) throw new Error("save failed");
-    } catch (e) {
-      alert(
-        "Failed to save scan to server — it's still in memory for this session.\n" +
-          (e as Error).message
-      );
+
+      let data: {
+        reportPath?: string;
+        target?: ResolvedTarget;
+        error?: string;
+        code?: string;
+        deduped?: boolean;
+      } = {};
+      try {
+        data = await res.json();
+      } catch {
+        /* ignore parse failures */
+      }
+
+      if (!res.ok) {
+        const msg =
+          data.error ||
+          (res.status === 429
+            ? "Too many requests. Please try again later."
+            : `Something went wrong (HTTP ${res.status}). Please try again.`);
+        setStatus("error");
+        setError(msg);
+        return;
+      }
+
+      // Already-scanned-this-email: server returned the existing report path
+      // so we just bounce them straight there.
+      if (data.reportPath) {
+        setProgress(100);
+        setStatus("redirecting");
+        router.push(data.reportPath);
+        return;
+      }
+
+      if (!data.target) {
+        setStatus("error");
+        setError("Couldn't look up that business. Please try again.");
+        return;
+      }
+
+      setTarget(data.target);
+      setStatus("confirming");
+    } catch (err) {
+      setStatus("error");
+      setError((err as Error).message || "Network error. Please try again.");
     }
-    setAllScans((prev) => {
-      const filtered = prev.filter((s) => s.timestamp !== scan.timestamp);
-      return [scan, ...filtered];
-    });
   }
 
-  function loadScan(scan: Scan) {
-    setLastScan(scan);
-    renderScanPins(scan);
-    if (scan.target) drawTargetMarker(scan.target);
-  }
+  async function confirmAndScan() {
+    if (!target) return;
+    setError(null);
+    setStatus("scanning");
+    setProgress(2);
 
-  async function deleteScan(timestamp: string) {
     try {
-      await fetch(
-        `/api/scans?timestamp=${encodeURIComponent(timestamp)}`,
-        { method: "DELETE", headers: adminHeaders() }
-      );
-    } catch {
-      /* still remove locally */
-    }
-    setAllScans((prev) => prev.filter((s) => s.timestamp !== timestamp));
-    if (lastScan?.timestamp === timestamp) {
-      setLastScan(null);
-      scanLayerRef.current?.clearLayers();
+      const res = await fetch("/api/auto-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          step: "scan",
+          businessName,
+          email,
+          phone: phone || undefined,
+          keyword,
+          notes: notes || undefined,
+          target,
+        }),
+      });
+
+      let data: { reportPath?: string; error?: string; code?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        /* ignore parse failures */
+      }
+
+      if (!res.ok || !data.reportPath) {
+        const msg =
+          data.error ||
+          (res.status === 429
+            ? "Too many requests. Please try again later."
+            : `Something went wrong (HTTP ${res.status}). Please try again.`);
+        setStatus("error");
+        setError(msg);
+        return;
+      }
+
+      setProgress(100);
+      setStatus("redirecting");
+      router.push(data.reportPath);
+    } catch (err) {
+      setStatus("error");
+      setError((err as Error).message || "Network error. Please try again.");
     }
   }
 
-  function exportLastScan() {
-    if (!lastScan) return;
-    const blob = new Blob([JSON.stringify(lastScan, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const slug = (lastScan.target.name || "scan")
-      .replace(/[^a-z0-9]/gi, "-")
-      .toLowerCase();
-    a.download = `${slug}-${lastScan.timestamp.split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  function rejectMatch() {
+    setTarget(null);
+    setStatus("idle");
+    setError(null);
   }
 
-  const summary = lastScan ? computeSummary(lastScan) : null;
+  const isBusy =
+    status === "resolving" ||
+    status === "scanning" ||
+    status === "redirecting";
+  const showForm = status === "idle" || status === "error" || status === "resolving";
+  const showScanning = status === "scanning" || status === "redirecting";
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <h1>
-          Grayson County Geo Tracker
-          <Link href="/help" className="help-icon" title="How does this work?" aria-label="Help">
-            ?
-          </Link>
-        </h1>
-
-        <section>
-          <h2>Target Business</h2>
-          {!target && (
+    <div className={`${playfair.variable} ${inter.variable} fl`}>
+      <main>
+        <article className="fl-doc">
+          {showForm && (
             <>
-              <input
-                type="text"
-                placeholder="e.g., Daughtertys Heating Cooling Leitchfield"
-                value={businessQuery}
-                onChange={(e) => setBusinessQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") findBusiness();
-                }}
-              />
-              <button onClick={findBusiness} disabled={finding}>
-                {finding ? "Searching…" : "Find Business"}
-              </button>
-              {candidates && (
-                <>
-                  <small className="help" style={{ marginTop: 10 }}>
-                    Pick the correct match:
-                  </small>
-                  <ul className="list">
-                    {candidates.length === 0 && (
-                      <li>
-                        <small className="help">
-                          No matches. Try a different query.
-                        </small>
-                      </li>
-                    )}
-                    {candidates.map((c) => (
-                      <li key={c.id}>
-                        <button onClick={() => lockBusiness(c)}>
-                          <strong>{c.displayName?.text || "Unknown"}</strong>
-                          <small>{c.formattedAddress || ""}</small>
-                          <small>
-                            {c.rating
-                              ? `★ ${c.rating} (${c.userRatingCount || 0} reviews)`
-                              : "No reviews"}
-                          </small>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </>
-          )}
-          {target && (
-            <>
-              <div className="locked">
-                <strong>{target.name}</strong>
-                <span className="addr">{target.address}</span>
-              </div>
-              <button className="secondary" onClick={changeBusiness}>
-                Change Business
-              </button>
-            </>
-          )}
-        </section>
+              <section className="fl-hero">
+                <p className="fl-eyebrow">
+                  Free for Grayson County, KY · Local Geomap Audit
+                </p>
+                <h1 className="fl-hero-title">
+                  Find out <em>exactly</em> where you rank on Google.
+                </h1>
+                <p className="fl-hero-sub">
+                  A free block-by-block map of how your business shows up
+                  when nearby customers search. No subscription, no catch.
+                </p>
+              </section>
 
-        <section>
-          <h2>Scan Settings</h2>
-          <label>
-            Keyword
-            <input
-              type="text"
-              placeholder="e.g., hvac near me"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-            />
-          </label>
-          <div className="row">
-            <label>
-              Grid
-              <select
-                value={`${gridRows}x${gridCols}`}
-                onChange={(e) => {
-                  const [r, c] = e.target.value.split("x").map(Number);
-                  setGridRows(r);
-                  setGridCols(c);
-                }}
-              >
-                <option value="5x7">5×7 — 35 pts</option>
-                <option value="7x7">7×7 — 49 pts · audit</option>
-                <option value="9x7">9×7 — 63 pts · paid</option>
-              </select>
-            </label>
-            <label>
-              Radius
-              <select
-                value={radiusMiles}
-                onChange={(e) => setRadiusMiles(parseFloat(e.target.value))}
-              >
-                <option value={5}>Local — 5 mi</option>
-                <option value={10}>County — 10 mi</option>
-                <option value={15}>Audit — 15 mi</option>
-                <option value={20}>Regional — 20 mi</option>
-              </select>
-            </label>
-          </div>
-          <small className="help">
-            Radius is measured from the tracked business&rsquo;s location.
-          </small>
-          <button onClick={() => runScan()} disabled={scanning || !target}>
-            {scanning ? "Scanning…" : "Run Scan"}
-          </button>
-          {(scanning || progress.total > 0) && (
-            <div id="scan-progress">
-              <progress value={progress.current} max={progress.total} />
-              <p className="progress-text">{progress.text}</p>
-            </div>
-          )}
-        </section>
+              <MapMockup />
 
-        <section>
-          <h2>Last Scan</h2>
-          {!lastScan && (
-            <small className="help">No scan yet.</small>
-          )}
-          {lastScan && summary && (
-            <div className="summary">
-              <p className="target">{lastScan.target.name}</p>
-              <p className="meta">
-                &quot;{lastScan.keyword}&quot; · {gridLabel(lastScan)} ·{" "}
-                {new Date(lastScan.timestamp).toLocaleString()}
-              </p>
-              <div className="stat-grid">
-                <div className="stat">
-                  <div className="label">Visibility</div>
-                  <div className={`value ${summary.scoreClass}`}>
-                    {summary.score}
-                  </div>
-                </div>
-                <div className="stat">
-                  <div className="label">Avg rank</div>
-                  <div className="value">{summary.avgRank}</div>
-                </div>
-                <div className="stat">
-                  <div className="label">Top 3</div>
-                  <div className="value">
-                    {summary.top3}/{summary.valid}
-                  </div>
-                </div>
-                <div className="stat">
-                  <div className="label">Top 10</div>
-                  <div className="value">
-                    {summary.top10}/{summary.valid}
-                  </div>
-                </div>
-              </div>
-              <div className="legend">
-                <div className="legend-item">
-                  <div
-                    className="legend-dot"
-                    style={{ background: "#16a34a" }}
-                  />
-                  1–3
-                </div>
-                <div className="legend-item">
-                  <div
-                    className="legend-dot"
-                    style={{ background: "#eab308" }}
-                  />
-                  4–10
-                </div>
-                <div className="legend-item">
-                  <div
-                    className="legend-dot"
-                    style={{ background: "#f97316" }}
-                  />
-                  11–20
-                </div>
-                <div className="legend-item">
-                  <div
-                    className="legend-dot"
-                    style={{ background: "#dc2626" }}
-                  />
-                  20+
-                </div>
-              </div>
-              {(() => {
-                const rivals = computeTopCompetitors(lastScan);
-                if (rivals.length === 0) return null;
-                const max = rivals[0].steals;
-                return (
-                  <div className="rivals">
-                    <div className="rivals-title">Top competitors stealing #1</div>
-                    <ul className="rivals-list">
-                      {rivals.map((r, i) => (
-                        <li key={r.name} className="rivals-row">
-                          <span className="rivals-rank">{i + 1}</span>
-                          <div className="rivals-body">
-                            <div className="rivals-name">{r.name}</div>
-                            <div className="rivals-bar-wrap">
-                              <div
-                                className="rivals-bar"
-                                style={{ width: `${(r.steals / max) * 100}%` }}
-                              />
-                            </div>
-                          </div>
-                          <span className="rivals-count">{r.steals}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })()}
-              <a
-                className="report-btn"
-                href={`/report/${encodeURIComponent(lastScan.timestamp)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Create Report →
-              </a>
-              <button className="secondary" onClick={exportLastScan}>
-                Download JSON
-              </button>
-            </div>
-          )}
-        </section>
+              <section className="fl-problem">
+                <div className="fl-problem-ink">THE PROBLEM</div>
+                <p>
+                  When a customer Googles &ldquo;plumber near me,&rdquo; the
+                  top results change based on where they&rsquo;re standing.
+                  Someone three miles north of you sees a different list
+                  than someone three miles south. You&rsquo;re losing calls
+                  in parts of town you didn&rsquo;t even know you were
+                  losing.
+                </p>
+              </section>
 
-        <section>
-          <h2>Businesses</h2>
-          {allScans.length === 0 && (
-            <small className="help">No scans yet.</small>
-          )}
-          {allScans.length > 0 && (
-            <ul className="biz-list">
-              {groupScansByBusiness(allScans).map((group) => {
-                const isOpen = expandedBiz === group.placeId;
-                return (
-                  <li key={group.placeId} className="biz-group">
-                    <button
-                      className="biz-head"
-                      onClick={() =>
-                        setExpandedBiz(isOpen ? null : group.placeId)
-                      }
-                    >
-                      <div className="biz-head-main">
-                        <strong>{group.name}</strong>
-                        <small>
-                          {group.scans.length}{" "}
-                          {group.scans.length === 1 ? "scan" : "scans"} · last{" "}
-                          {new Date(group.latest).toLocaleDateString()}
-                        </small>
-                      </div>
-                      <span className={`biz-caret ${isOpen ? "open" : ""}`}>
-                        ▸
-                      </span>
-                    </button>
-                    {isOpen && (
-                      <ul className="biz-scans">
-                        {group.scans.map((scan) => {
-                          const active = lastScan?.timestamp === scan.timestamp;
-                          return (
-                            <li
-                              key={scan.timestamp}
-                              className={`biz-scan-row ${active ? "active" : ""}`}
-                            >
-                              <button
-                                className="biz-scan-load"
-                                onClick={() => loadScan(scan)}
-                              >
-                                <span className="biz-scan-kw">
-                                  &ldquo;{scan.keyword}&rdquo;
-                                </span>
-                                <span className="biz-scan-meta">
-                                  {new Date(scan.timestamp).toLocaleString()} ·{" "}
-                                  {gridLabel(scan)}
-                                </span>
-                              </button>
-                              <button
-                                className="biz-scan-delete"
-                                title="Delete scan"
-                                aria-label="Delete scan"
-                                onClick={() => deleteScan(scan.timestamp)}
-                              >
-                                ×
-                              </button>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
+              <section className="fl-what">
+                <h2>
+                  What you&rsquo;ll <em>get</em>
+                </h2>
+                <div className="fl-bullets">
+                  <div className="fl-bullet">
+                    <div className="fl-bullet-num">01</div>
+                    <h3>A real map</h3>
+                    <p>
+                      49 scan points across a 15-mile radius around your
+                      business, each showing your exact rank for the
+                      keyword customers are typing.
+                    </p>
+                  </div>
+                  <div className="fl-bullet">
+                    <div className="fl-bullet-num">02</div>
+                    <h3>A real number</h3>
+                    <p>
+                      Visibility score from 0 to 100, average rank, top-3
+                      percentage. The same metrics paid rank trackers
+                      charge $25/month for.
+                    </p>
+                  </div>
+                  <div className="fl-bullet">
+                    <div className="fl-bullet-num">03</div>
+                    <h3>Real rivals</h3>
+                    <p>
+                      Names of the businesses taking the calls you should
+                      be getting, neighborhood by neighborhood.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="fl-why-free">
+                <div className="fl-why-free-tag">WHY IT&rsquo;S FREE</div>
+                <p>
+                  If you like the map, fixing it is what I do. Either way,
+                  the report is yours to keep.
+                </p>
+                <p>
+                  Most gray spots aren&rsquo;t a sign your business is bad.
+                  They mean your website isn&rsquo;t doing its job, so
+                  calls go to people who aren&rsquo;t even better than
+                  you.
+                </p>
+                <p className="fl-why-free-lead">Studio 925 fixes that:</p>
+                <ul className="fl-why-free-list">
+                  <li>
+                    Foundation site, <strong>$900</strong>, fast and
+                    Google-ready
                   </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      </aside>
+                  <li>
+                    Growth, <strong>$1,800</strong>, adds dedicated service
+                    pages, hands-on SEO audit, and lead tracking
+                  </li>
+                  <li>
+                    <em>You own everything the day it launches</em>
+                  </li>
+                  <li>No retainers, no monthly packages, no learning curve</li>
+                </ul>
+                <p>
+                  Stay on{" "}
+                  <a
+                    href="https://studio925.design/hosting-support"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="fl-upsell"
+                  >
+                    Full Support hosting
+                  </a>{" "}
+                  after launch and I keep showing up. A new service page or
+                  two blog posts each month on the keywords you&rsquo;re
+                  losing, plus a 63-point rescan to track progress. You run
+                  the business. I keep the phone <em>ringing</em>.
+                </p>
+                <p className="fl-why-free-cta">
+                  Get the audit first. Decide after.
+                </p>
+              </section>
 
-      <div ref={mapEl} className="map-wrap" />
+              <form className="au-form-inline" onSubmit={submit} noValidate>
+                <div className="au-form-label">GET YOUR FREE AUDIT</div>
+                <p className="au-form-sub">
+                  Fill this out. Your map appears in about 30 seconds — no
+                  waiting, no follow-up email needed.
+                </p>
+
+                <label>
+                  Business name
+                  <input
+                    type="text"
+                    required
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    placeholder="Your business name"
+                    autoComplete="organization"
+                    disabled={isBusy}
+                  />
+                </label>
+
+                <label>
+                  Your email
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@yourbusiness.com"
+                    autoComplete="email"
+                    disabled={isBusy}
+                  />
+                </label>
+
+                <div className="au-row">
+                  <label>
+                    Phone <span className="au-opt">(optional)</span>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="(270) 555-0000"
+                      autoComplete="tel"
+                      disabled={isBusy}
+                    />
+                  </label>
+
+                  <label>
+                    Keyword to track
+                    <input
+                      type="text"
+                      required
+                      value={keyword}
+                      onChange={(e) => setKeyword(e.target.value)}
+                      placeholder="e.g., hvac near me"
+                      disabled={isBusy}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Anything else? <span className="au-opt">(optional)</span>
+                  <textarea
+                    rows={3}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Service area, specific competitors, goals…"
+                    disabled={isBusy}
+                  />
+                </label>
+
+                <label className="au-honey" aria-hidden>
+                  Leave blank
+                  <input
+                    type="text"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={honeypot}
+                    onChange={(e) => setHoneypot(e.target.value)}
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  className="au-submit"
+                  disabled={isBusy}
+                >
+                  {status === "resolving" ? "Looking you up…" : "Run my free audit →"}
+                </button>
+
+                {error && <div className="au-error">{error}</div>}
+
+                <p className="au-fine">
+                  No credit card. No subscription. One free audit per email.
+                  <br />
+                  <strong>
+                    Your business must have a Google Business Profile
+                  </strong>
+                  , ideally with a handful of reviews. Brand-new or unlisted
+                  businesses won&rsquo;t produce useful data yet.{" "}
+                  <a
+                    href="https://business.google.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Create one here
+                  </a>
+                  .
+                </p>
+              </form>
+            </>
+          )}
+
+          {status === "confirming" && target && (
+            <section className="au-confirm" aria-live="polite">
+              <div className="au-confirm-tag">CHECK BEFORE WE SCAN</div>
+              <h1>Is this you?</h1>
+              <div className="au-confirm-card">
+                <div className="au-confirm-card-name">{target.name}</div>
+                {target.address && (
+                  <div className="au-confirm-card-addr">{target.address}</div>
+                )}
+              </div>
+              <p>
+                We&rsquo;ll run the 49-point scan against this Google
+                Business Profile and the keyword{" "}
+                <em>&ldquo;{keyword}&rdquo;</em>. Make sure it&rsquo;s
+                yours — you only get one free scan per email.
+              </p>
+              <div className="au-confirm-actions">
+                <button
+                  type="button"
+                  className="au-submit"
+                  onClick={confirmAndScan}
+                >
+                  Yes, that&rsquo;s me — start the scan →
+                </button>
+                <button
+                  type="button"
+                  className="au-confirm-back"
+                  onClick={rejectMatch}
+                >
+                  No, let me try a different name
+                </button>
+              </div>
+            </section>
+          )}
+
+          {showScanning && (
+            <section className="au-thanks" aria-live="polite">
+              <h1>
+                {status === "redirecting"
+                  ? "Map ready — opening it now…"
+                  : "Scanning Grayson County for you…"}
+              </h1>
+              <p>
+                We&rsquo;re checking{" "}
+                <strong>{businessName || "your business"}</strong> against{" "}
+                <em>&ldquo;{keyword}&rdquo;</em> at 49 points across a
+                15-mile radius. This usually takes about 30 seconds.
+              </p>
+              <div
+                className="au-progress"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress)}
+              >
+                <div
+                  className="au-progress-fill"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="au-thanks-sub">
+                Don&rsquo;t close this tab — your report opens automatically
+                when the scan finishes.
+              </p>
+            </section>
+          )}
+        </article>
+      </main>
     </div>
   );
-}
-
-async function migrateLocalStorageScans() {
-  if (typeof window === "undefined") return;
-  if (localStorage.getItem("gct_migrated_v1")) return;
-
-  const collected: Scan[] = [];
-  const seen = new Set<string>();
-
-  const historyRaw = localStorage.getItem("gct_scan_history");
-  if (historyRaw) {
-    try {
-      const entries = JSON.parse(historyRaw) as Array<{ full?: Scan }>;
-      for (const e of entries) {
-        if (e?.full?.timestamp && !seen.has(e.full.timestamp)) {
-          collected.push(e.full);
-          seen.add(e.full.timestamp);
-        }
-      }
-    } catch {
-      /* ignore parse errors */
-    }
-  }
-
-  const lastRaw = localStorage.getItem("gct_last_scan");
-  if (lastRaw) {
-    try {
-      const s = JSON.parse(lastRaw) as Scan;
-      if (s?.timestamp && !seen.has(s.timestamp)) {
-        collected.push(s);
-        seen.add(s.timestamp);
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  if (collected.length === 0) {
-    localStorage.setItem("gct_migrated_v1", "1");
-    return;
-  }
-
-  let migrated = 0;
-  for (const scan of collected) {
-    try {
-      const res = await fetch("/api/scans", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...adminHeaders() },
-        body: JSON.stringify(scan),
-      });
-      if (res.ok) migrated++;
-    } catch {
-      /* keep going */
-    }
-  }
-
-  if (migrated > 0) {
-    console.log(`Migrated ${migrated} scan(s) from localStorage to server.`);
-    localStorage.setItem("gct_migrated_v1", "1");
-    localStorage.removeItem("gct_scan_history");
-    localStorage.removeItem("gct_last_scan");
-  }
-}
-
-function computeTopCompetitors(scan: Scan) {
-  const counts = new Map<string, number>();
-  for (const p of scan.points) {
-    if (!p.topResult) continue;
-    if (p.rank === 1) continue;
-    counts.set(p.topResult, (counts.get(p.topResult) ?? 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .map(([name, steals]) => ({ name, steals }))
-    .sort((a, b) => b.steals - a.steals)
-    .slice(0, 3);
-}
-
-function groupScansByBusiness(scans: Scan[]) {
-  const byBiz = new Map<
-    string,
-    { placeId: string; name: string; scans: Scan[]; latest: string }
-  >();
-  for (const scan of scans) {
-    const key = scan.target.placeId;
-    const existing = byBiz.get(key);
-    if (existing) {
-      existing.scans.push(scan);
-      if (scan.timestamp > existing.latest) existing.latest = scan.timestamp;
-    } else {
-      byBiz.set(key, {
-        placeId: key,
-        name: scan.target.name,
-        scans: [scan],
-        latest: scan.timestamp,
-      });
-    }
-  }
-  return Array.from(byBiz.values())
-    .map((g) => ({
-      ...g,
-      scans: g.scans.sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
-    }))
-    .sort((a, b) => b.latest.localeCompare(a.latest));
-}
-
-function computeSummary(scan: Scan) {
-  const valid = scan.points.filter((p) => !p.error);
-  const found = valid.filter((p) => p.rank !== null);
-  const top3 = valid.filter((p) => p.rank !== null && (p.rank || 0) <= 3);
-  const top10 = valid.filter((p) => p.rank !== null && (p.rank || 0) <= 10);
-  const avgRank =
-    found.length > 0
-      ? (found.reduce((s, p) => s + (p.rank || 0), 0) / found.length).toFixed(1)
-      : "—";
-  const score =
-    valid.length > 0
-      ? Math.round(
-          valid.reduce((s, p) => {
-            if (p.rank === null) return s;
-            return s + Math.max(0, 100 - ((p.rank || 0) - 1) * 5);
-          }, 0) / valid.length
-        )
-      : 0;
-  const scoreClass = score >= 60 ? "good" : score >= 30 ? "mid" : "bad";
-  return {
-    valid: valid.length,
-    found: found.length,
-    top3: top3.length,
-    top10: top10.length,
-    avgRank,
-    score,
-    scoreClass,
-  };
 }
