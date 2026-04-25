@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
+import { requireAdmin } from "@/lib/auth";
+import { corsHeaders, preflight, rejectDisallowedOrigin } from "@/lib/cors";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const LEADS_FILE = path.join(DATA_DIR, "leads.json");
@@ -14,6 +16,14 @@ const LEADS_FILE = path.join(DATA_DIR, "leads.json");
 const EMAIL_DEDUP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const IP_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const IP_DAILY_LIMIT = 3;
+
+// Length caps on free-text fields. Bots love submitting megabyte payloads
+// to fill disks or run up Resend bills — keep everything bounded.
+const MAX_BUSINESS = 200;
+const MAX_EMAIL = 254;
+const MAX_PHONE = 40;
+const MAX_KEYWORD = 200;
+const MAX_NOTES = 1000;
 
 type Lead = {
   timestamp: string;
@@ -89,31 +99,52 @@ function escapeHtml(s: string): string {
   );
 }
 
-export async function GET() {
+export function OPTIONS(req: NextRequest) {
+  return preflight(req);
+}
+
+export async function GET(req: NextRequest) {
+  const denied = requireAdmin(req);
+  if (denied) return denied;
   const leads = await readLeads().catch(() => []);
-  return NextResponse.json({ leads });
+  return NextResponse.json({ leads }, { headers: corsHeaders(req) });
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = rejectDisallowedOrigin(req);
+  if (blocked) return blocked;
+
   let body: Partial<Lead> & { honeypot?: string };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid body" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid body" },
+      { status: 400, headers: corsHeaders(req) }
+    );
   }
 
-  if (body.honeypot) return NextResponse.json({ ok: true });
+  if (body.honeypot) {
+    return NextResponse.json({ ok: true }, { headers: corsHeaders(req) });
+  }
 
-  const businessName = (body.businessName || "").trim();
-  const email = (body.email || "").trim().toLowerCase();
+  const businessName = (body.businessName || "").trim().slice(0, MAX_BUSINESS);
+  const email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
+  const phone = body.phone?.trim().slice(0, MAX_PHONE) || undefined;
+  const keyword = body.keyword?.trim().slice(0, MAX_KEYWORD) || undefined;
+  const notes = body.notes?.trim().slice(0, MAX_NOTES) || undefined;
+
   if (!businessName || !email) {
     return NextResponse.json(
       { error: "Business name and email are required" },
-      { status: 400 }
+      { status: 400, headers: corsHeaders(req) }
     );
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return NextResponse.json({ error: "Invalid email" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid email" },
+      { status: 400, headers: corsHeaders(req) }
+    );
   }
 
   const ip =
@@ -138,7 +169,7 @@ export async function POST(req: NextRequest) {
             "We already have a recent audit request for this email. Check your inbox, or message kara@studio925.design if it didn't arrive.",
           code: "duplicate_email",
         },
-        { status: 429 }
+        { status: 429, headers: corsHeaders(req) }
       );
     }
     if (ip) {
@@ -154,7 +185,7 @@ export async function POST(req: NextRequest) {
               "Too many requests from your network today. Please try again tomorrow.",
             code: "rate_limit_ip",
           },
-          { status: 429 }
+          { status: 429, headers: corsHeaders(req) }
         );
       }
     }
@@ -164,9 +195,9 @@ export async function POST(req: NextRequest) {
     timestamp: new Date().toISOString(),
     businessName,
     email,
-    phone: body.phone?.trim() || undefined,
-    keyword: body.keyword?.trim() || undefined,
-    notes: body.notes?.trim() || undefined,
+    phone,
+    keyword,
+    notes,
     status: "new",
     ip,
   };
@@ -190,20 +221,35 @@ export async function POST(req: NextRequest) {
     console.error("[leads] email failed:", emailResult.reason);
   }
 
-  return NextResponse.json({ ok: true, emailed: emailResult.sent });
+  return NextResponse.json(
+    { ok: true, emailed: emailResult.sent },
+    { headers: corsHeaders(req) }
+  );
 }
 
 export async function DELETE(req: NextRequest) {
+  const denied = requireAdmin(req);
+  if (denied) return denied;
+
   const timestamp = new URL(req.url).searchParams.get("timestamp");
   if (!timestamp) {
-    return NextResponse.json({ error: "timestamp required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "timestamp required" },
+      { status: 400, headers: corsHeaders(req) }
+    );
   }
   try {
     const leads = await readLeads();
     const filtered = leads.filter((l) => l.timestamp !== timestamp);
     await writeLeads(filtered);
-    return NextResponse.json({ ok: true, count: filtered.length });
+    return NextResponse.json(
+      { ok: true, count: filtered.length },
+      { headers: corsHeaders(req) }
+    );
   } catch {
-    return NextResponse.json({ ok: true, count: 0 });
+    return NextResponse.json(
+      { ok: true, count: 0 },
+      { headers: corsHeaders(req) }
+    );
   }
 }

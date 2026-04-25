@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isOverBudget, recordPlacesCall } from "@/lib/usage";
+import { corsHeaders, preflight, rejectDisallowedOrigin } from "@/lib/cors";
 
 const PLACES_URL = "https://places.googleapis.com/v1/places:searchText";
 // Hard monthly cost cap. Override with PLACES_MONTHLY_BUDGET_USD env var.
@@ -12,13 +13,23 @@ const MAX_MONTHLY_USD = Number(process.env.PLACES_MONTHLY_BUDGET_USD ?? 25);
 const FIELD_MASK_BASE =
   "places.id,places.displayName,places.formattedAddress,places.location";
 const FIELD_MASK_RATINGS = ",places.rating,places.userRatingCount";
+// Cap on free-text query length. Real keywords are short ("oil change near
+// leitchfield ky" ~32 chars). 200 is generous; longer = junk or attack.
+const MAX_QUERY = 200;
+
+export function OPTIONS(req: NextRequest) {
+  return preflight(req);
+}
 
 export async function POST(req: NextRequest) {
+  const blocked = rejectDisallowedOrigin(req);
+  if (blocked) return blocked;
+
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "GOOGLE_PLACES_API_KEY is not set in .env.local" },
-      { status: 500 }
+      { status: 500, headers: corsHeaders(req) }
     );
   }
 
@@ -32,7 +43,7 @@ export async function POST(req: NextRequest) {
           "Monthly Places API budget reached. Audits are paused until next month.",
         code: "budget_exceeded",
       },
-      { status: 503 }
+      { status: 503, headers: corsHeaders(req) }
     );
   }
 
@@ -47,10 +58,14 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid JSON body" },
+      { status: 400, headers: corsHeaders(req) }
+    );
   }
 
-  const { textQuery, lat, lng, radius, maxResults, includeRatings } = body;
+  const { lat, lng, radius, maxResults, includeRatings } = body;
+  const textQuery = (body.textQuery || "").trim().slice(0, MAX_QUERY);
   const fieldMask = includeRatings
     ? FIELD_MASK_BASE + FIELD_MASK_RATINGS
     : FIELD_MASK_BASE;
@@ -62,7 +77,7 @@ export async function POST(req: NextRequest) {
   ) {
     return NextResponse.json(
       { error: "Missing required fields: textQuery, lat, lng, radius" },
-      { status: 400 }
+      { status: 400, headers: corsHeaders(req) }
     );
   }
 
@@ -98,7 +113,10 @@ export async function POST(req: NextRequest) {
     } catch {
       /* keep default */
     }
-    return NextResponse.json({ error: message }, { status: googleRes.status });
+    return NextResponse.json(
+      { error: message },
+      { status: googleRes.status, headers: corsHeaders(req) }
+    );
   }
 
   const data = await googleRes.json();
@@ -107,5 +125,8 @@ export async function POST(req: NextRequest) {
   recordPlacesCall(!!includeRatings).catch((e) => {
     console.warn("[places] failed to record usage:", (e as Error).message);
   });
-  return NextResponse.json({ places: data.places || [] });
+  return NextResponse.json(
+    { places: data.places || [] },
+    { headers: corsHeaders(req) }
+  );
 }

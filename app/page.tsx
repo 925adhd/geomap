@@ -5,6 +5,7 @@ import Link from "next/link";
 import type * as LeafletNS from "leaflet";
 import { generateGrid } from "@/lib/grid";
 import graysonGeometry from "@/lib/grayson-geometry.json";
+import { adminHeaders } from "@/lib/admin-token";
 import {
   gridLabel,
   type PlaceResult,
@@ -133,7 +134,7 @@ export default function Page() {
       }
       await migrateLocalStorageScans();
       try {
-        const res = await fetch("/api/scans");
+        const res = await fetch("/api/scans", { headers: adminHeaders() });
         if (res.ok) {
           const { scans } = await res.json();
           if (!cancelled) {
@@ -366,7 +367,7 @@ export default function Page() {
     try {
       const res = await fetch("/api/scans", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
         body: JSON.stringify(scan),
       });
       if (!res.ok) throw new Error("save failed");
@@ -392,7 +393,7 @@ export default function Page() {
     try {
       await fetch(
         `/api/scans?timestamp=${encodeURIComponent(timestamp)}`,
-        { method: "DELETE" }
+        { method: "DELETE", headers: adminHeaders() }
       );
     } catch {
       /* still remove locally */
@@ -783,7 +784,7 @@ async function migrateLocalStorageScans() {
     try {
       const res = await fetch("/api/scans", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...adminHeaders() },
         body: JSON.stringify(scan),
       });
       if (res.ok) migrated++;
