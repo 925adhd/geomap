@@ -301,8 +301,8 @@ export default function AuditPage() {
               <section className="fl-why-free">
                 <div className="fl-why-free-tag">WHY IT&rsquo;S FREE</div>
                 <p>
-                  If you like the map, fixing it is what I do. Either way,
-                  the report is yours to keep.
+                  If you like the map, fixing it is what I do. The report
+                  is yours to keep.
                 </p>
                 <p>
                   Most weak spots aren&rsquo;t a sign your business is bad.
@@ -348,8 +348,7 @@ export default function AuditPage() {
               <form className="au-form-inline" onSubmit={submit} noValidate>
                 <div className="au-form-label">GET YOUR FREE AUDIT</div>
                 <p className="au-form-sub">
-                  Fill this out. Your map appears in about 30 seconds — no
-                  waiting, no follow-up email needed.
+                  Fill this out. Your map appears in about 30 seconds.
                 </p>
 
                 <label>
@@ -449,13 +448,11 @@ export default function AuditPage() {
                 {error && <div className="au-error">{error}</div>}
 
                 <p className="au-fine">
-                  No credit card. No subscription.
-                  <br />
                   <strong>
-                    Your business must have a Google Business Profile
-                  </strong>
-                  , ideally with a handful of reviews. Brand-new or unlisted
-                  businesses won&rsquo;t produce useful data yet.{" "}
+                    Your business must have a Google Business Profile.
+                  </strong>{" "}
+                  Brand-new or unlisted businesses won&rsquo;t produce
+                  useful data yet.{" "}
                   {/* GBP link gets its own line on mobile via .au-fine-gbp
                       so it doesn't dangle as orphaned text after a wrap. */}
                   <span className="au-fine-gbp">
