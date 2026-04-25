@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
 import { requireAdmin } from "@/lib/auth";
 import { corsHeaders, preflight, rejectDisallowedOrigin } from "@/lib/cors";
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const LEADS_FILE = path.join(DATA_DIR, "leads.json");
+import { supabase } from "@/lib/supabase";
 
 // Rate limits (defense against bots once this endpoint is public).
 // Per-email: blocks repeat submissions within the window so we don't
 // re-trigger a scan or re-email Kara for the same lead.
 // Per-IP: blunts a single bot rotating fake emails from one network.
-// If reading the leads file fails (read-only FS, corrupted JSON), we
-// let the request through and rely on the budget cap in /api/places.
+// If the dedup query fails, we let the request through and rely on the
+// budget cap in /api/places.
 const EMAIL_DEDUP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const IP_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const IP_DAILY_LIMIT = 3;
@@ -36,19 +32,28 @@ type Lead = {
   ip?: string;
 };
 
-async function readLeads(): Promise<Lead[]> {
-  try {
-    const contents = await fs.readFile(LEADS_FILE, "utf-8");
-    return JSON.parse(contents) as Lead[];
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw e;
-  }
-}
+type LeadRow = {
+  timestamp: string;
+  business_name: string;
+  email: string;
+  phone: string | null;
+  keyword: string | null;
+  notes: string | null;
+  status: Lead["status"];
+  ip: string | null;
+};
 
-async function writeLeads(leads: Lead[]) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(LEADS_FILE, JSON.stringify(leads, null, 2), "utf-8");
+function rowToLead(r: LeadRow): Lead {
+  return {
+    timestamp: r.timestamp,
+    businessName: r.business_name,
+    email: r.email,
+    phone: r.phone ?? undefined,
+    keyword: r.keyword ?? undefined,
+    notes: r.notes ?? undefined,
+    status: r.status,
+    ip: r.ip ?? undefined,
+  };
 }
 
 async function emailLead(lead: Lead) {
@@ -106,7 +111,16 @@ export function OPTIONS(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const denied = requireAdmin(req);
   if (denied) return denied;
-  const leads = await readLeads().catch(() => []);
+  const { data, error } = await supabase()
+    .from("leads")
+    .select("*")
+    .order("timestamp", { ascending: false })
+    .limit(2000);
+  if (error) {
+    console.error("[leads] GET failed:", error);
+    return NextResponse.json({ leads: [] }, { headers: corsHeaders(req) });
+  }
+  const leads = (data as LeadRow[]).map(rowToLead);
   return NextResponse.json({ leads }, { headers: corsHeaders(req) });
 }
 
@@ -152,42 +166,43 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-real-ip") ||
     undefined;
 
-  // Rate limits run BEFORE we email Kara or burn any spend. If reading
-  // the leads file fails (cold start, read-only FS, corrupt JSON), let
-  // the request through — the budget cap in /api/places is the second guard.
-  const existingLeads = await readLeads().catch(() => null);
-  if (existingLeads) {
-    const dupByEmail = existingLeads.find(
-      (l) =>
-        l.email === email &&
-        Date.now() - new Date(l.timestamp).getTime() < EMAIL_DEDUP_WINDOW_MS
+  // Rate limits run BEFORE we email Kara or burn any spend. If a query
+  // fails, let the request through — the budget cap in /api/places is
+  // the second guard.
+  const emailWindowStart = new Date(Date.now() - EMAIL_DEDUP_WINDOW_MS).toISOString();
+  const { data: dupRows } = await supabase()
+    .from("leads")
+    .select("timestamp")
+    .eq("email", email)
+    .gte("timestamp", emailWindowStart)
+    .limit(1);
+  if (dupRows && dupRows.length > 0) {
+    return NextResponse.json(
+      {
+        error:
+          "We already have a recent audit request for this email. Check your inbox, or message kara@studio925.design if it didn't arrive.",
+        code: "duplicate_email",
+      },
+      { status: 429, headers: corsHeaders(req) }
     );
-    if (dupByEmail) {
+  }
+
+  if (ip) {
+    const ipWindowStart = new Date(Date.now() - IP_DAILY_WINDOW_MS).toISOString();
+    const { data: ipRows } = await supabase()
+      .from("leads")
+      .select("timestamp")
+      .eq("ip", ip)
+      .gte("timestamp", ipWindowStart);
+    if (ipRows && ipRows.length >= IP_DAILY_LIMIT) {
       return NextResponse.json(
         {
           error:
-            "We already have a recent audit request for this email. Check your inbox, or message kara@studio925.design if it didn't arrive.",
-          code: "duplicate_email",
+            "Too many requests from your network today. Please try again tomorrow.",
+          code: "rate_limit_ip",
         },
         { status: 429, headers: corsHeaders(req) }
       );
-    }
-    if (ip) {
-      const sameIpToday = existingLeads.filter(
-        (l) =>
-          l.ip === ip &&
-          Date.now() - new Date(l.timestamp).getTime() < IP_DAILY_WINDOW_MS
-      );
-      if (sameIpToday.length >= IP_DAILY_LIMIT) {
-        return NextResponse.json(
-          {
-            error:
-              "Too many requests from your network today. Please try again tomorrow.",
-            code: "rate_limit_ip",
-          },
-          { status: 429, headers: corsHeaders(req) }
-        );
-      }
     }
   }
 
@@ -207,14 +222,18 @@ export async function POST(req: NextRequest) {
     reason: (e as Error).message,
   }));
 
-  if (existingLeads) {
-    try {
-      existingLeads.unshift(newLead);
-      existingLeads.splice(2000);
-      await writeLeads(existingLeads);
-    } catch {
-      // serverless FS might be read-only — that's fine if email went out
-    }
+  const { error: insertErr } = await supabase().from("leads").insert({
+    timestamp: newLead.timestamp,
+    business_name: newLead.businessName,
+    email: newLead.email,
+    phone: newLead.phone ?? null,
+    keyword: newLead.keyword ?? null,
+    notes: newLead.notes ?? null,
+    status: newLead.status,
+    ip: newLead.ip ?? null,
+  });
+  if (insertErr) {
+    console.error("[leads] insert failed:", insertErr);
   }
 
   if (!emailResult.sent && process.env.RESEND_API_KEY) {
@@ -238,18 +257,9 @@ export async function DELETE(req: NextRequest) {
       { status: 400, headers: corsHeaders(req) }
     );
   }
-  try {
-    const leads = await readLeads();
-    const filtered = leads.filter((l) => l.timestamp !== timestamp);
-    await writeLeads(filtered);
-    return NextResponse.json(
-      { ok: true, count: filtered.length },
-      { headers: corsHeaders(req) }
-    );
-  } catch {
-    return NextResponse.json(
-      { ok: true, count: 0 },
-      { headers: corsHeaders(req) }
-    );
+  const { error } = await supabase().from("leads").delete().eq("timestamp", timestamp);
+  if (error) {
+    console.error("[leads] DELETE failed:", error);
   }
+  return NextResponse.json({ ok: true }, { headers: corsHeaders(req) });
 }

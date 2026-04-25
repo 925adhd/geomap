@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Fraunces, IBM_Plex_Sans } from "next/font/google";
 
 const fraunces = Fraunces({
@@ -15,9 +16,17 @@ const plex = IBM_Plex_Sans({
   display: "swap",
 });
 
-type Status = "idle" | "submitting" | "success" | "error";
+type Status = "idle" | "scanning" | "redirecting" | "error";
+
+// The grid is 49 calls. With 5-way concurrency on the server it finishes
+// in 5–15 seconds; we still show a fake-ish progress curve here because
+// silent buttons feel broken. The bar isn't a real percentage, just a
+// reassuring "we're working on it" indicator that never reaches 100%
+// before the server actually returns.
+const PROGRESS_DURATION_MS = 22_000;
 
 export default function AuditPage() {
+  const router = useRouter();
   const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -26,53 +35,82 @@ export default function AuditPage() {
   const [honeypot, setHoneypot] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const startedAt = useRef<number>(0);
+
+  useEffect(() => {
+    if (status !== "scanning") return;
+    startedAt.current = Date.now();
+    const id = setInterval(() => {
+      const elapsed = Date.now() - startedAt.current;
+      // Asymptote at ~92% so we never look "stuck at 100".
+      const pct = 92 * (1 - Math.exp(-elapsed / (PROGRESS_DURATION_MS / 3)));
+      setProgress(pct);
+    }, 200);
+    return () => clearInterval(id);
+  }, [status]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setStatus("submitting");
+    if (status === "scanning") return;
     setError(null);
 
     if (honeypot) {
-      setStatus("success");
+      // Pretend success silently; bots don't get an actual report.
+      setStatus("redirecting");
       return;
     }
 
-    const accessKey = process.env.NEXT_PUBLIC_WEB3FORMS_KEY;
-    if (!accessKey) {
-      setStatus("error");
-      setError("Form is not configured yet. Contact kara@studio925.design.");
+    if (!keyword.trim()) {
+      setError("Please tell us the keyword you want tracked (e.g. 'plumber near me').");
       return;
     }
+
+    setStatus("scanning");
+    setProgress(2);
 
     try {
-      const res = await fetch("https://api.web3forms.com/submit", {
+      const res = await fetch("/api/auto-scan", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          access_key: accessKey,
-          subject: `New audit request — ${businessName}`,
-          from_name: "Geomap Local",
-          replyto: email,
-          business_name: businessName,
+          businessName,
           email,
-          phone: phone || "(not provided)",
-          keyword: keyword || "(not specified)",
-          notes: notes || "(none)",
+          phone: phone || undefined,
+          keyword,
+          notes: notes || undefined,
+          honeypot: honeypot || undefined,
         }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || `HTTP ${res.status}`);
+
+      let data: { reportPath?: string; error?: string; code?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        /* keep empty */
       }
-      setStatus("success");
+
+      if (!res.ok || !data.reportPath) {
+        const msg =
+          data.error ||
+          (res.status === 429
+            ? "Too many requests. Please try again later."
+            : `Something went wrong (HTTP ${res.status}). Please try again.`);
+        setStatus("error");
+        setError(msg);
+        return;
+      }
+
+      setProgress(100);
+      setStatus("redirecting");
+      router.push(data.reportPath);
     } catch (e) {
       setStatus("error");
-      setError((e as Error).message);
+      setError((e as Error).message || "Network error. Please try again.");
     }
   }
+
+  const isBusy = status === "scanning" || status === "redirecting";
 
   return (
     <div className={`${fraunces.variable} ${plex.variable} fl`}>
@@ -82,7 +120,7 @@ export default function AuditPage() {
           <div className="fl-kicker">GRAYSON COUNTY, KY · 2026</div>
         </header>
 
-        {status !== "success" && (
+        {status !== "scanning" && status !== "redirecting" && (
           <>
             <section className="fl-hero">
               <div className="fl-hero-tag">
@@ -167,8 +205,7 @@ export default function AuditPage() {
             <form className="au-form-inline" onSubmit={submit} noValidate>
               <div className="au-form-label">GET YOUR FREE AUDIT</div>
               <p className="au-form-sub">
-                Fill this out. I&rsquo;ll run the scan and email your map
-                within one business day.
+                Fill this out. Your map will appear in about 30 seconds.
               </p>
 
               <label>
@@ -180,6 +217,7 @@ export default function AuditPage() {
                   onChange={(e) => setBusinessName(e.target.value)}
                   placeholder="Your business name"
                   autoComplete="organization"
+                  disabled={isBusy}
                 />
               </label>
 
@@ -192,6 +230,7 @@ export default function AuditPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@yourbusiness.com"
                   autoComplete="email"
+                  disabled={isBusy}
                 />
               </label>
 
@@ -204,16 +243,19 @@ export default function AuditPage() {
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="(270) 555-0000"
                     autoComplete="tel"
+                    disabled={isBusy}
                   />
                 </label>
 
                 <label>
-                  Keyword to track <span className="au-opt">(optional)</span>
+                  Keyword to track
                   <input
                     type="text"
+                    required
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                     placeholder="e.g., hvac near me"
+                    disabled={isBusy}
                   />
                 </label>
               </div>
@@ -225,6 +267,7 @@ export default function AuditPage() {
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Service area, specific competitors, goals…"
+                  disabled={isBusy}
                 />
               </label>
 
@@ -242,18 +285,15 @@ export default function AuditPage() {
               <button
                 type="submit"
                 className="au-submit"
-                disabled={status === "submitting"}
+                disabled={isBusy}
               >
-                {status === "submitting"
-                  ? "Sending…"
-                  : "Send my free audit →"}
+                {isBusy ? "Running your scan…" : "Run my free audit →"}
               </button>
 
               {error && <div className="au-error">{error}</div>}
 
               <p className="au-fine">
-                No credit card. No subscription. Emailed personally within one
-                business day.
+                No credit card. No subscription. One free audit per email.
                 <br />
                 <strong>
                   Your business must have a Google Business Profile
@@ -278,57 +318,45 @@ export default function AuditPage() {
           </>
         )}
 
-        {status === "success" && (
-          <section className="au-thanks">
-            <div className="au-thanks-mark">✓</div>
-            <h1>Thanks — I got it.</h1>
+        {(status === "scanning" || status === "redirecting") && (
+          <section className="au-thanks" aria-live="polite">
+            <h1>
+              {status === "redirecting"
+                ? "Map ready — opening it now…"
+                : "Scanning Grayson County for you…"}
+            </h1>
             <p>
-              I&rsquo;ll run the scan for{" "}
-              <strong>{businessName || "your business"}</strong> and email the
-              map to <strong>{email}</strong> within one business day.
+              We&rsquo;re checking <strong>{businessName || "your business"}</strong>{" "}
+              against <em>&ldquo;{keyword}&rdquo;</em> at 49 points across a
+              15-mile radius. This usually takes about 30 seconds.
             </p>
-
-            <div className="au-next">
-              <div className="au-next-tag">WHAT TO EXPECT NEXT</div>
-              <ol>
-                <li>
-                  <strong>Today or tomorrow:</strong> you get the map plus one
-                  concrete recommendation you can act on.
-                </li>
-                <li>
-                  <strong>If you want the full fix:</strong> Studio 925 builds
-                  custom websites from <strong>$900</strong> — mobile-first,
-                  Google-ready, live in about a week.
-                </li>
-                <li>
-                  <strong>Decide after you see the map.</strong> No pressure,
-                  no pitch call unless you want one.
-                </li>
-              </ol>
-              <a
-                className="au-next-cta"
-                href="https://studio925.design"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                See website packages →
-              </a>
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+              style={{
+                width: "100%",
+                maxWidth: 480,
+                margin: "32px auto",
+                height: 8,
+                background: "rgba(20,22,26,0.08)",
+                borderRadius: 999,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${progress}%`,
+                  height: "100%",
+                  background: "var(--fl-blue, #1e3a5f)",
+                  transition: "width 250ms ease-out",
+                }}
+              />
             </div>
-
-            <div className="au-upsell-blurb">
-              <div className="au-upsell-badge">WANT ONGOING TRACKING?</div>
-              <p>
-                Pair your website with{" "}
-                <strong className="fl-upsell">Full Support hosting</strong>{" "}
-                and get a denser <strong>63-point rescan every month</strong>,
-                plus me on your team as an ongoing SEO partner handling new
-                pages, posts, and indexing.
-              </p>
-            </div>
-
             <p className="au-thanks-sub">
-              Didn&rsquo;t hear back in 24 hours? Check spam, or text
-              (270) 551-2210.
+              Don&rsquo;t close this tab — your report opens automatically when
+              the scan finishes.
             </p>
           </section>
         )}

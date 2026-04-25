@@ -1,15 +1,9 @@
-import fs from "fs/promises";
-import path from "path";
+import { supabase } from "./supabase";
 
 // Tracks Places API call volume per UTC month so we can enforce a hard
 // cost cap in /api/places. Counter resets automatically on the first
-// of each month. Storage is the same JSON-file pattern used by leads
-// and scans, so it works on a long-lived Node process (her desktop, a VPS).
-// On serverless filesystems this would silently no-op on write — fine,
-// just means the cap doesn't enforce. Don't deploy without persistent FS.
-
-const DATA_DIR = path.join(process.cwd(), "data");
-const USAGE_FILE = path.join(DATA_DIR, "usage.json");
+// of each month — we just use the current "YYYY-MM" as the row key.
+// One row per month in the `usage` table; missing row = zero calls.
 
 // Per Google Maps Platform pricing (Places API New, Text Search):
 // Essentials: 10,000 free/mo, then $5 per 1,000 (next tier kicks in at 100K).
@@ -43,19 +37,19 @@ function freshUsage(): Usage {
 }
 
 async function readUsage(): Promise<Usage> {
-  try {
-    const contents = await fs.readFile(USAGE_FILE, "utf-8");
-    const parsed = JSON.parse(contents) as Usage;
-    if (parsed.month !== currentMonth()) return freshUsage();
-    return parsed;
-  } catch {
-    return freshUsage();
-  }
-}
-
-async function writeUsage(usage: Usage) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(USAGE_FILE, JSON.stringify(usage, null, 2), "utf-8");
+  const month = currentMonth();
+  const { data, error } = await supabase()
+    .from("usage")
+    .select("month, essentials_calls, enterprise_calls, last_updated")
+    .eq("month", month)
+    .maybeSingle();
+  if (error || !data) return freshUsage();
+  return {
+    month: data.month,
+    essentialsCalls: data.essentials_calls ?? 0,
+    enterpriseCalls: data.enterprise_calls ?? 0,
+    lastUpdated: data.last_updated ?? new Date().toISOString(),
+  };
 }
 
 export async function recordPlacesCall(includeRatings: boolean) {
@@ -63,7 +57,17 @@ export async function recordPlacesCall(includeRatings: boolean) {
   if (includeRatings) usage.enterpriseCalls += 1;
   else usage.essentialsCalls += 1;
   usage.lastUpdated = new Date().toISOString();
-  await writeUsage(usage);
+  await supabase()
+    .from("usage")
+    .upsert(
+      {
+        month: usage.month,
+        essentials_calls: usage.essentialsCalls,
+        enterprise_calls: usage.enterpriseCalls,
+        last_updated: usage.lastUpdated,
+      },
+      { onConflict: "month" }
+    );
 }
 
 export async function getEstimatedCostUsd(): Promise<number> {

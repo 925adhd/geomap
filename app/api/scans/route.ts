@@ -1,35 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import fs from "fs/promises";
-import path from "path";
 import type { Scan } from "@/lib/types";
 import { requireAdmin } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const SCANS_FILE = path.join(DATA_DIR, "scans.json");
-
-async function readScans(): Promise<Scan[]> {
-  try {
-    const contents = await fs.readFile(SCANS_FILE, "utf-8");
-    const parsed = JSON.parse(contents);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw e;
-  }
-}
-
-async function writeScans(scans: Scan[]) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(SCANS_FILE, JSON.stringify(scans, null, 2), "utf-8");
-}
+type ScanRow = { timestamp: string; payload: Scan };
 
 // All scan-store endpoints are admin-only. The public /report/[timestamp]
-// page reads scans.json directly server-side (see app/report/[timestamp]/
+// page reads from Supabase directly server-side (see app/report/[timestamp]/
 // page.tsx), so locking down /api/scans doesn't break public report links.
 export async function GET(req: NextRequest) {
   const denied = requireAdmin(req);
   if (denied) return denied;
-  const scans = await readScans();
+  const { data, error } = await supabase()
+    .from("scans")
+    .select("payload")
+    .order("timestamp", { ascending: false })
+    .limit(500);
+  if (error) {
+    console.error("[scans] GET failed:", error);
+    return NextResponse.json({ scans: [] });
+  }
+  const scans = (data as { payload: Scan }[]).map((r) => r.payload);
   return NextResponse.json({ scans });
 }
 
@@ -41,12 +32,15 @@ export async function POST(req: NextRequest) {
   if (!scan?.timestamp || !scan?.target?.placeId) {
     return NextResponse.json({ error: "Invalid scan payload" }, { status: 400 });
   }
-  const scans = await readScans();
-  const deduped = scans.filter((s) => s.timestamp !== scan.timestamp);
-  deduped.unshift(scan);
-  deduped.splice(500);
-  await writeScans(deduped);
-  return NextResponse.json({ ok: true, count: deduped.length });
+  const row: ScanRow = { timestamp: scan.timestamp, payload: scan };
+  const { error } = await supabase()
+    .from("scans")
+    .upsert(row, { onConflict: "timestamp" });
+  if (error) {
+    console.error("[scans] POST failed:", error);
+    return NextResponse.json({ error: "Save failed" }, { status: 500 });
+  }
+  return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: NextRequest) {
@@ -57,8 +51,9 @@ export async function DELETE(req: NextRequest) {
   if (!timestamp) {
     return NextResponse.json({ error: "timestamp required" }, { status: 400 });
   }
-  const scans = await readScans();
-  const filtered = scans.filter((s) => s.timestamp !== timestamp);
-  await writeScans(filtered);
-  return NextResponse.json({ ok: true, count: filtered.length });
+  const { error } = await supabase().from("scans").delete().eq("timestamp", timestamp);
+  if (error) {
+    console.error("[scans] DELETE failed:", error);
+  }
+  return NextResponse.json({ ok: true });
 }

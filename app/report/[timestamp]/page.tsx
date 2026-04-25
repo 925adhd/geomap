@@ -1,10 +1,9 @@
 
-import fs from "fs/promises";
-import path from "path";
 import { notFound } from "next/navigation";
 import { Fraunces, IBM_Plex_Sans } from "next/font/google";
 import { gridLabel, type Scan } from "@/lib/types";
 import graysonGeometry from "@/lib/grayson-geometry.json";
+import { supabase } from "@/lib/supabase";
 import { PrintButton } from "./print-button";
 import { ReportMap } from "./report-map";
 
@@ -48,14 +47,13 @@ const plex = IBM_Plex_Sans({
 });
 
 async function getScan(timestamp: string): Promise<Scan | null> {
-  const file = path.join(process.cwd(), "data", "scans.json");
-  try {
-    const contents = await fs.readFile(file, "utf-8");
-    const scans = JSON.parse(contents) as Scan[];
-    return scans.find((s) => s.timestamp === timestamp) ?? null;
-  } catch {
-    return null;
-  }
+  const { data, error } = await supabase()
+    .from("scans")
+    .select("payload")
+    .eq("timestamp", timestamp)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { payload: Scan }).payload;
 }
 
 function buildRecommendation(args: {
