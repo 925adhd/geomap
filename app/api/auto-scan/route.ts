@@ -175,11 +175,15 @@ async function handleScan(
       .eq("ip", ip)
       .gte("timestamp", ipWindowStart);
     if (ipRows && ipRows.length >= IP_DAILY_LIMIT) {
+      // Same vague message as budget_exceeded so abusers can't infer the
+      // limit type or wait-out window. Internal logs still capture which
+      // limit fired for ops visibility.
+      console.warn("[auto-scan] IP rate limit fired:", ip);
       return jsonError(
         req,
         429,
-        "Too many requests from your network today. Please try again tomorrow.",
-        "rate_limit_ip"
+        "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.",
+        "rate_limited"
       );
     }
   }
@@ -456,10 +460,13 @@ function jsonError(
 }
 
 function budgetError(req: NextRequest) {
+  // Same wording as the IP rate-limit message — visitor sees one
+  // unified "this isn't available, email me" fallback regardless of
+  // which guard fired.
   return jsonError(
     req,
     503,
-    "Free audits are paused until next month. Email kara@studio925.design and we'll get yours done manually.",
+    "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.",
     "budget_exceeded"
   );
 }

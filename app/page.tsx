@@ -135,11 +135,12 @@ export default function AuditPage() {
       }
 
       if (!res.ok) {
+        // Trust the server's user-facing message (it's already vague enough
+        // to not leak which limit fired). Generic fallback only if the
+        // server didn't include one.
         const msg =
           data.error ||
-          (res.status === 429
-            ? "Too many requests. Please try again later."
-            : `Something went wrong (HTTP ${res.status}). Please try again.`);
+          "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.";
         setStatus("error");
         setError(msg);
         return;
