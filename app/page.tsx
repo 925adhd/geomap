@@ -38,6 +38,23 @@ type ResolvedTarget = {
 // actually returns.
 const PROGRESS_DURATION_MS = 22_000;
 
+// Render an error string with any email address inside it linkified
+// as a mailto. Lets the budget/rate-limit message ("...email
+// kara@studio925.design...") give the user a one-click contact path
+// without us hand-crafting JSX in every callsite.
+const EMAIL_RE = /([\w.+-]+@[\w-]+\.[\w.-]+)/;
+function renderErrorWithMailto(text: string) {
+  return text.split(EMAIL_RE).map((part, i) =>
+    EMAIL_RE.test(part) ? (
+      <a key={i} href={`mailto:${part}`} className="au-error-link">
+        {part}
+      </a>
+    ) : (
+      part
+    )
+  );
+}
+
 function MapMockup() {
   return (
     <figure
@@ -137,12 +154,12 @@ export default function AuditPage() {
       }
 
       if (!res.ok) {
-        // Trust the server's user-facing message (it's already vague enough
-        // to not leak which limit fired). Generic fallback only if the
-        // server didn't include one.
+        // Trust the server's user-facing message — it already names the
+        // "email kara" path. Generic fallback only fires when the server
+        // returned non-ok without a JSON body (rare, network-edge case).
         const msg =
           data.error ||
-          "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.";
+          "Something went wrong on our end. Please try again in a moment.";
         setStatus("error");
         setError(msg);
         return;
@@ -203,7 +220,7 @@ export default function AuditPage() {
       if (!res.ok || !data.reportPath) {
         const msg =
           data.error ||
-          "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.";
+          "Something went wrong on our end. Please try again in a moment.";
         setStatus("error");
         setError(msg);
         return;
@@ -445,7 +462,11 @@ export default function AuditPage() {
                   {status === "resolving" ? "Looking you up…" : "Run my free audit →"}
                 </button>
 
-                {error && <div className="au-error">{error}</div>}
+                {error && (
+                  <div className="au-error">
+                    {renderErrorWithMailto(error)}
+                  </div>
+                )}
 
                 <p className="au-fine">
                   <strong>

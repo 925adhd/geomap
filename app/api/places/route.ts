@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Monthly Places API budget reached. Audits are paused until next month.",
+            "This month's free audits are all used up. Email kara@studio925.design with your business name and keyword and I'll run yours within the day.",
           code: "budget_exceeded",
         },
         { status: 503, headers: corsHeaders(req) }

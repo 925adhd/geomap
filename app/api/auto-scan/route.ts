@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { generateGrid } from "@/lib/grid";
 import { PlacesApiError, PlacesBudgetError, searchPlaces } from "@/lib/places";
 import { costForCalls } from "@/lib/usage";
+import { checkEmail } from "@/lib/email-check";
 import type { PlaceResult, Scan, ScanPoint, TargetBusiness } from "@/lib/types";
 
 // Public auto-audit endpoint. Two-phase to avoid scanning the wrong
@@ -91,6 +92,16 @@ export async function POST(req: NextRequest) {
     return jsonError(req, 400, fields.error);
   }
 
+  // Anti-abuse layer: reject disposable inboxes + dead domains, then
+  // collapse Gmail dot/plus variants to a single canonical form so the
+  // downstream lifetime-per-email dedup catches `foo+1@x` and `foo+2@x`
+  // as the same person.
+  const emailCheck = await checkEmail(fields.email);
+  if (!emailCheck.ok) {
+    return jsonError(req, 400, emailCheck.reason);
+  }
+  fields.email = emailCheck.normalized;
+
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
     req.headers.get("x-real-ip") ||
@@ -144,7 +155,7 @@ async function handleResolve(
       return jsonError(
         req,
         429,
-        "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.",
+        "This month's free audits are all used up. Email kara@studio925.design with your business name and keyword and I'll run yours within the day.",
         "rate_limited"
       );
     }
@@ -213,7 +224,7 @@ async function handleScan(
       return jsonError(
         req,
         429,
-        "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.",
+        "This month's free audits are all used up. Email kara@studio925.design with your business name and keyword and I'll run yours within the day.",
         "rate_limited"
       );
     }
@@ -500,7 +511,7 @@ function budgetError(req: NextRequest) {
   return jsonError(
     req,
     503,
-    "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.",
+    "This month's free audits are all used up. Email kara@studio925.design with your business name and keyword and I'll run yours within the day.",
     "budget_exceeded"
   );
 }

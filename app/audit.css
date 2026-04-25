@@ -398,6 +398,14 @@ a.fl-upsell:hover {
   color: #7a0d0d;
   font-size: 13px;
 }
+.au-error-link {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
+.au-error-link:hover {
+  text-decoration: none;
+}
 .au-fine {
   margin-top: 14px;
   font-size: 12px;

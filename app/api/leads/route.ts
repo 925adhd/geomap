@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { corsHeaders, preflight, rejectDisallowedOrigin } from "@/lib/cors";
+import { checkEmail } from "@/lib/email-check";
 import { supabase } from "@/lib/supabase";
 
 // Rate limits (defense against bots once this endpoint is public).
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
   }
 
   const businessName = (body.businessName || "").trim().slice(0, MAX_BUSINESS);
-  const email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
+  let email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
   const name = body.name?.trim().slice(0, 100) || undefined;
   const phone = body.phone?.trim().slice(0, MAX_PHONE) || undefined;
   const keyword = body.keyword?.trim().slice(0, MAX_KEYWORD) || undefined;
@@ -165,6 +166,17 @@ export async function POST(req: NextRequest) {
       { status: 400, headers: corsHeaders(req) }
     );
   }
+
+  // Same anti-abuse layer as /api/auto-scan: disposable domain blocklist,
+  // MX record check, and +/dot normalization for downstream dedup.
+  const emailCheck = await checkEmail(email);
+  if (!emailCheck.ok) {
+    return NextResponse.json(
+      { error: emailCheck.reason },
+      { status: 400, headers: corsHeaders(req) }
+    );
+  }
+  email = emailCheck.normalized;
 
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
