@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { Fraunces, IBM_Plex_Sans } from "next/font/google";
 import { gridLabel, type Scan } from "@/lib/types";
 import graysonGeometry from "@/lib/grayson-geometry.json";
-import { supabase } from "@/lib/supabase";
+import { supabasePublic } from "@/lib/supabase";
 import { PrintButton } from "./print-button";
 import { ReportMap } from "./report-map";
 
@@ -55,7 +55,10 @@ const plex = IBM_Plex_Sans({
 });
 
 async function getScan(timestamp: string): Promise<Scan | null> {
-  const { data, error } = await supabase()
+  // Use the anon-key client here, not service_role. RLS on `scans`
+  // grants public SELECT, so this still works; but the credential's
+  // blast radius is one read-only table instead of the whole project.
+  const { data, error } = await supabasePublic()
     .from("scans")
     .select("payload")
     .eq("timestamp", timestamp)

@@ -15,9 +15,13 @@ Serves as the source of truth when there's no CLI link to the project.
 
 - Browser → Vercel API routes (CORS + rate limit guards in `app/api/*`)
 - API routes → Supabase using `SUPABASE_SERVICE_ROLE_KEY` (bypasses RLS)
+- Public report page `/report/[timestamp]` → Supabase using
+  `SUPABASE_ANON_KEY` (respects RLS). Limits the credential's blast
+  radius to the one read-only policy below.
 - Browser never talks to Supabase directly
-- RLS is enabled on every table with no policies — so `anon` / `sb_publishable`
-  keys see nothing. Only the server-side service_role can read/write.
+- RLS is enabled on every table. The only policy is `scans_public_read`
+  on `scans` (SELECT, TO anon, USING true) — every other table is
+  invisible to anon. service_role bypasses RLS regardless.
 
 ## Tables
 
@@ -56,6 +60,12 @@ and the public report page `/report/[timestamp]`.
 
 Indexes:
 - `scans_timestamp_idx` on `(timestamp desc)`
+
+RLS policies:
+- `scans_public_read` — `FOR SELECT TO anon USING (true)`. Lets the
+  public `/report/[timestamp]` page read scan rows with the anon key
+  instead of the service_role. No INSERT/UPDATE/DELETE policy for anon,
+  so writes still require service_role.
 
 Cost columns are populated at save time so each row records what the
 scan actually cost. Sort by `estimated_cost_usd desc` in the Supabase
@@ -112,10 +122,11 @@ treated as "no existing report" and trigger a fresh scan.
 
 ## Env vars required
 
-Both are server-only, never `NEXT_PUBLIC_`:
+All three are server-only, never `NEXT_PUBLIC_`:
 
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` — bypasses RLS, used by admin/write paths
+- `SUPABASE_ANON_KEY` — respects RLS, used by `/report/[timestamp]`
 
 Set in `.env.local` for dev, and in Vercel → Project Settings → Environment
 Variables (Production + Preview + Development) for deploys.
@@ -127,4 +138,5 @@ When the schema changes:
 2. Edit this file's table section to match.
 3. Bump the "Last verified" date below.
 
-Last verified: 2026-04-25 (added optional `name` column to leads)
+Last verified: 2026-04-25 (added `scans_public_read` RLS policy +
+`SUPABASE_ANON_KEY` env var so the report page reads with anon role)
