@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 
 // Admin auth for routes that mutate the lead/scan stores or expose the
-// full lead/scan list. The token is set as ADMIN_TOKEN in the deployment
-// environment and provided by the dashboard via an x-admin-token header.
-// Public visitors won't have the token in localStorage so admin calls
-// fail with 401 — they can still hit the public endpoints (/api/leads
-// POST, /api/places POST) as expected.
+// full lead/scan list. In production these routes 404 unconditionally
+// (the admin dashboard is dev-only — Kara runs it locally against the
+// production Supabase project, so production has no need to expose
+// admin endpoints at all). In development, the token is read from
+// ADMIN_TOKEN and matched against an x-admin-token header.
 
 function safeEqual(a: string, b: string): boolean {
   // timingSafeEqual throws on length mismatch, so guard first. The length
@@ -19,6 +19,14 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export function requireAdmin(req: NextRequest): NextResponse | null {
+  // Admin endpoints are dev-only. Kara runs the dashboard locally
+  // against the production Supabase project; production deploys never
+  // need /api/scans CRUD or /api/leads GET/DELETE. Returning 404 in
+  // production removes the entire admin attack surface from the public
+  // edge — even with a leaked ADMIN_TOKEN, an attacker hits a 404.
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse("Not found", { status: 404 });
+  }
   const expected = process.env.ADMIN_TOKEN;
   if (!expected) {
     return NextResponse.json(
