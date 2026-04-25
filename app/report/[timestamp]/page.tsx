@@ -1,4 +1,5 @@
 
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Fraunces, IBM_Plex_Sans } from "next/font/google";
 import { gridLabel, type Scan } from "@/lib/types";
@@ -6,6 +7,13 @@ import graysonGeometry from "@/lib/grayson-geometry.json";
 import { supabase } from "@/lib/supabase";
 import { PrintButton } from "./print-button";
 import { ReportMap } from "./report-map";
+
+// Reports are reachable by timestamp alone — anyone with the URL can
+// read them. Keep them out of search engines so a customer's audit
+// doesn't surface in a "site:studio925.design" query.
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 type Ring = number[][];
 type Polygon = { type: "Polygon"; coordinates: Ring[] };

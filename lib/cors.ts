@@ -24,8 +24,13 @@ function isSameOrigin(req: NextRequest, origin: string): boolean {
   }
 }
 
+// Browsers always send Origin on cross-origin POSTs, so a missing Origin
+// on a state-changing request means a non-browser caller (curl, server-side
+// script). Reject those — they'd otherwise sail past every CORS-based
+// guard. Same-origin browser GETs sometimes omit Origin, but the GET
+// endpoints that matter are admin-token-gated separately.
 function isAllowed(req: NextRequest, origin: string | null): boolean {
-  if (!origin) return true;
+  if (!origin) return false;
   if (isSameOrigin(req, origin)) return true;
   return ALLOWED_ORIGINS.has(origin);
 }

@@ -103,11 +103,15 @@ export async function POST(req: NextRequest) {
     return handleScan(req, fields, body.target, ip);
   }
 
-  return handleResolve(req, fields);
+  return handleResolve(req, fields, ip);
 }
 
 // --- Step 1: resolve ---------------------------------------------------------
-async function handleResolve(req: NextRequest, fields: FormFields) {
+async function handleResolve(
+  req: NextRequest,
+  fields: FormFields,
+  ip: string | undefined
+) {
   // Lifetime per-email cap. If we already have a lead for this email, send
   // them straight to their existing report — no resolve, no scan, no cost.
   const existing = await findExistingScanForEmail(fields.email);
@@ -120,6 +124,30 @@ async function handleResolve(req: NextRequest, fields: FormFields) {
       },
       { headers: corsHeaders(req) }
     );
+  }
+
+  // Per-IP daily limit applied to resolve too. Without this, a bot can
+  // burn the Places free tier by spamming unique-email resolve calls
+  // without ever advancing to the scan step. The check counts successful
+  // leads rows in the last 24h: a normal visitor produces one and is
+  // unaffected; an attacker who already burned 3 scans gets blocked here
+  // before triggering another Places call.
+  if (ip) {
+    const ipWindowStart = new Date(Date.now() - IP_DAILY_WINDOW_MS).toISOString();
+    const { data: ipRows } = await supabase()
+      .from("leads")
+      .select("timestamp")
+      .eq("ip", ip)
+      .gte("timestamp", ipWindowStart);
+    if (ipRows && ipRows.length >= IP_DAILY_LIMIT) {
+      console.warn("[auto-scan/resolve] IP rate limit fired:", ip);
+      return jsonError(
+        req,
+        429,
+        "Free audits aren't available right now. Email kara@studio925.design and I'll set one up for you.",
+        "rate_limited"
+      );
+    }
   }
 
   let target: TargetBusiness;

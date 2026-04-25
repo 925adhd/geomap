@@ -51,7 +51,17 @@ export async function searchPlaces(args: SearchPlacesArgs): Promise<PlaceResult[
     throw new PlacesApiError("GOOGLE_PLACES_API_KEY is not set", 500);
   }
   const maxUsd = args.maxMonthlyUsd ?? Number(process.env.PLACES_MONTHLY_BUDGET_USD ?? 25);
-  if (await isOverBudget(maxUsd).catch(() => false)) {
+  // Fail closed: if we can't read usage, assume we're at the cap rather
+  // than letting traffic through unaccounted. A transient Supabase outage
+  // briefly disables Places calls instead of silently disabling the budget
+  // guard — that's the trade-off we want when real money is on the line.
+  let overBudget = true;
+  try {
+    overBudget = await isOverBudget(maxUsd);
+  } catch (e) {
+    console.error("[places] usage read failed, failing closed:", (e as Error).message);
+  }
+  if (overBudget) {
     throw new PlacesBudgetError();
   }
 

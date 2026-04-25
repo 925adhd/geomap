@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { corsHeaders, preflight, rejectDisallowedOrigin } from "@/lib/cors";
 import { PlacesApiError, PlacesBudgetError, searchPlaces } from "@/lib/places";
 
+// Geofence: this endpoint is for the Grayson County dashboard only.
+// Even with the CORS guard tightened, refusing wildly off-area requests
+// stops anyone who slips through from using us as a free Places proxy
+// for arbitrary worldwide queries. The box covers Grayson + the
+// neighboring counties scans actually reach; admin findBusiness uses a
+// 30km radius from Grayson center, the auto-scan grid spans ~24km, so
+// 60km is generous headroom.
+const GEOFENCE = {
+  minLat: 36.8,
+  maxLat: 38.2,
+  minLng: -87.5,
+  maxLng: -85.0,
+  maxRadiusMeters: 60_000,
+};
+
 export function OPTIONS(req: NextRequest) {
   return preflight(req);
 }
@@ -36,6 +51,20 @@ export async function POST(req: NextRequest) {
   ) {
     return NextResponse.json(
       { error: "Missing required fields: textQuery, lat, lng, radius" },
+      { status: 400, headers: corsHeaders(req) }
+    );
+  }
+
+  if (
+    lat < GEOFENCE.minLat ||
+    lat > GEOFENCE.maxLat ||
+    lng < GEOFENCE.minLng ||
+    lng > GEOFENCE.maxLng ||
+    radius <= 0 ||
+    radius > GEOFENCE.maxRadiusMeters
+  ) {
+    return NextResponse.json(
+      { error: "Search location out of range" },
       { status: 400, headers: corsHeaders(req) }
     );
   }

@@ -4,6 +4,11 @@ import { requireAdmin } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { costForCalls } from "@/lib/usage";
 
+// Generous ceiling on the JSON payload. A 9×7 grid scan is ~30KB on the
+// wire; 200KB leaves headroom for metadata growth without letting an
+// admin-token holder write multi-MB rows that bloat the JSONB column.
+const MAX_PAYLOAD_BYTES = 200_000;
+
 type SaveBody =
   | Scan
   | {
@@ -58,7 +63,18 @@ export async function POST(req: NextRequest) {
   const denied = requireAdmin(req);
   if (denied) return denied;
 
-  const body = (await req.json()) as SaveBody;
+  // Read raw text first so we can size-cap before parsing. Stops a
+  // compromised admin token from being used to stuff giant JSONB rows.
+  const raw = await req.text();
+  if (raw.length > MAX_PAYLOAD_BYTES) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
+  let body: SaveBody;
+  try {
+    body = JSON.parse(raw) as SaveBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
   const { scan, proCalls, enterpriseAtmosphereCalls } = unwrap(body);
   if (!scan?.timestamp || !scan?.target?.placeId) {
     return NextResponse.json({ error: "Invalid scan payload" }, { status: 400 });
