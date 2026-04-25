@@ -539,14 +539,6 @@ export default function Page() {
           <button onClick={() => runScan()} disabled={scanning || !target}>
             {scanning ? "Scanning…" : "Run Scan"}
           </button>
-          <button
-            className="audit-preset-btn"
-            onClick={() => runScan({ rows: 7, cols: 7, miles: 15 })}
-            disabled={scanning || !target}
-            title="Runs a 7×7 scan at 15 mi — the free-audit preset"
-          >
-            {scanning ? "Scanning…" : "Run Free Audit (7×7 · 15 mi)"}
-          </button>
           {(scanning || progress.total > 0) && (
             <div id="scan-progress">
               <progress value={progress.current} max={progress.total} />

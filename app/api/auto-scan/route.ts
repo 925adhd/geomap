@@ -5,14 +5,16 @@ import { generateGrid } from "@/lib/grid";
 import { PlacesApiError, PlacesBudgetError, searchPlaces } from "@/lib/places";
 import type { PlaceResult, Scan, ScanPoint, TargetBusiness } from "@/lib/types";
 
-// Public auto-audit endpoint. Replaces the old web3forms + manual scan flow.
-// Visitor submits the audit form -> we resolve their business via Places ->
-// run a 49-point scan -> save scan + lead -> return the report URL.
+// Public auto-audit endpoint. Two-phase to avoid scanning the wrong
+// business when the visitor's typed name doesn't match Google's records:
 //
-// Lifetime per-email cap: if the email already submitted once, we skip the
-// scan entirely and return their existing report. This is the cost guard
-// against bots and casual abuse — re-running a scan for the same email
-// burns 49 Places calls every time.
+//   1. step:"resolve" — look up Places for that name, return the top match
+//      so the client can show a "Is this you?" confirmation card.
+//   2. step:"scan" — run the 49-point grid scan with the confirmed target,
+//      save lead+scan, return the report URL.
+//
+// Lifetime per-email cap: if the email already submitted, we return the
+// existing report URL on the resolve step and skip the scan entirely.
 
 // Vercel Pro plan: 60s function ceiling. A 49-point scan with 5-way
 // parallelism finishes in ~10s on a good day; 60s is the safety cap.
@@ -38,12 +40,22 @@ const IP_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const IP_DAILY_LIMIT = 3;
 
 type AutoScanBody = {
+  step?: "resolve" | "scan";
   businessName?: string;
   email?: string;
   phone?: string;
   keyword?: string;
   notes?: string;
   honeypot?: string;
+  target?: TargetBusiness;
+};
+
+type FormFields = {
+  businessName: string;
+  email: string;
+  phone?: string;
+  keyword: string;
+  notes?: string;
 };
 
 export function OPTIONS(req: NextRequest) {
@@ -61,7 +73,8 @@ export async function POST(req: NextRequest) {
     return jsonError(req, 400, "Invalid body");
   }
 
-  // Honeypot — silently succeed. Bots never see the result and don't retry.
+  // Honeypot — silently succeed without doing any work. Bots don't retry,
+  // and the client treats this as a "we're done" signal.
   if (body.honeypot) {
     return NextResponse.json(
       { ok: true, reportPath: null },
@@ -69,17 +82,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const businessName = (body.businessName || "").trim().slice(0, MAX_BUSINESS);
-  const email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
-  const phone = body.phone?.trim().slice(0, MAX_PHONE) || undefined;
-  const keyword = (body.keyword || "").trim().slice(0, MAX_KEYWORD);
-  const notes = body.notes?.trim().slice(0, MAX_NOTES) || undefined;
-
-  if (!businessName || !email || !keyword) {
-    return jsonError(req, 400, "Business name, email, and keyword are required.");
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return jsonError(req, 400, "Invalid email.");
+  const fields = parseAndValidate(body);
+  if ("error" in fields) {
+    return jsonError(req, 400, fields.error);
   }
 
   const ip =
@@ -87,25 +92,80 @@ export async function POST(req: NextRequest) {
     req.headers.get("x-real-ip") ||
     undefined;
 
-  // Lifetime per-email cap. If we already have a lead for this email, return
-  // the existing report instead of running a fresh scan. The lead and its
-  // scan share the same `timestamp` (set when the lead was first created),
-  // so one lookup is enough.
-  const existingScan = await findExistingScanForEmail(email);
-  if (existingScan) {
+  if (body.step === "scan") {
+    if (!body.target?.placeId) {
+      return jsonError(req, 400, "Confirmed business is required to start the scan.");
+    }
+    return handleScan(req, fields, body.target, ip);
+  }
+
+  return handleResolve(req, fields);
+}
+
+// --- Step 1: resolve ---------------------------------------------------------
+async function handleResolve(req: NextRequest, fields: FormFields) {
+  // Lifetime per-email cap. If we already have a lead for this email, send
+  // them straight to their existing report — no resolve, no scan, no cost.
+  const existing = await findExistingScanForEmail(fields.email);
+  if (existing) {
     return NextResponse.json(
       {
         ok: true,
-        reportPath: `/report/${encodeURIComponent(existingScan.timestamp)}`,
+        reportPath: `/report/${encodeURIComponent(existing.timestamp)}`,
         deduped: true,
       },
       { headers: corsHeaders(req) }
     );
   }
 
-  // Per-IP daily limit — defends against rotating-email bot spam from one
-  // network. Soft fail (log but proceed) on any DB error so a transient
-  // Supabase blip doesn't block real customers.
+  let target: TargetBusiness;
+  try {
+    target = await resolveBusiness(fields.businessName);
+  } catch (e) {
+    if (e instanceof PlacesBudgetError) return budgetError(req);
+    if (e instanceof PlacesApiError) return jsonError(req, 502, e.message);
+    if (e instanceof Error && e.message === "no_match") {
+      return jsonError(
+        req,
+        404,
+        "We couldn't find that business on Google. Make sure your Google Business Profile uses that exact name, then try again.",
+        "no_match"
+      );
+    }
+    console.error("[auto-scan/resolve] failed:", e);
+    return jsonError(req, 500, "Couldn't look that business up. Try again.");
+  }
+
+  return NextResponse.json(
+    { ok: true, target, deduped: false },
+    { headers: corsHeaders(req) }
+  );
+}
+
+// --- Step 2: scan ------------------------------------------------------------
+async function handleScan(
+  req: NextRequest,
+  fields: FormFields,
+  target: TargetBusiness,
+  ip: string | undefined
+) {
+  // Re-check email dedup in case the resolve happened in another tab/session
+  // and a scan got saved in between. Cheap query, prevents duplicate scans.
+  const existing = await findExistingScanForEmail(fields.email);
+  if (existing) {
+    return NextResponse.json(
+      {
+        ok: true,
+        reportPath: `/report/${encodeURIComponent(existing.timestamp)}`,
+        deduped: true,
+      },
+      { headers: corsHeaders(req) }
+    );
+  }
+
+  // Per-IP daily limit — keyed off `leads.ip` rows in the last 24h. Defends
+  // against rotating-email bots from one network. Only applied at scan time
+  // since resolve is just one cheap Places call.
   if (ip) {
     const ipWindowStart = new Date(Date.now() - IP_DAILY_WINDOW_MS).toISOString();
     const { data: ipRows } = await supabase()
@@ -123,31 +183,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Resolve the business. We bias the search to Grayson County and accept
-  // the first result; if nothing matches, bail before burning the 49-call
-  // grid scan. includeRatings=true upgrades this single call to Enterprise
-  // tier ($35/1k, 1k free) to match the admin dashboard's picker behavior.
-  let target: TargetBusiness;
-  try {
-    target = await resolveBusiness(businessName);
-  } catch (e) {
-    if (e instanceof PlacesBudgetError) return budgetError(req);
-    if (e instanceof PlacesApiError) return jsonError(req, 502, e.message);
-    if (e instanceof Error && e.message === "no_match") {
-      return jsonError(
-        req,
-        404,
-        "We couldn't find that business on Google. Make sure it has a Google Business Profile, then try again.",
-        "no_match"
-      );
-    }
-    console.error("[auto-scan] resolve failed:", e);
-    return jsonError(req, 500, "Couldn't resolve business.");
-  }
-
-  // Run the 49-point grid scan in batches. Failures on individual points are
-  // captured into the ScanPoint rather than aborting — a sparse map is still
-  // a useful map. A budget error on any call aborts the whole scan.
+  // Run the 49-point grid scan in batches of SCAN_CONCURRENCY. Failures on
+  // individual points are captured into the ScanPoint rather than aborting —
+  // a sparse map is still a useful map. A budget error on any call aborts.
   const radiusKm = RADIUS_MILES * 1.609344;
   const scanCenter: [number, number] = target.location
     ? [target.location.latitude, target.location.longitude]
@@ -156,10 +194,10 @@ export async function POST(req: NextRequest) {
 
   let points: ScanPoint[];
   try {
-    points = await runGridScan(grid, keyword, target.placeId);
+    points = await runGridScan(grid, fields.keyword, target.placeId);
   } catch (e) {
     if (e instanceof PlacesBudgetError) return budgetError(req);
-    console.error("[auto-scan] grid scan failed:", e);
+    console.error("[auto-scan/scan] grid scan failed:", e);
     return jsonError(req, 500, "Scan failed mid-run. Try again in a moment.");
   }
 
@@ -167,7 +205,7 @@ export async function POST(req: NextRequest) {
   const scan: Scan = {
     timestamp,
     target,
-    keyword,
+    keyword: fields.keyword,
     gridRows: GRID_ROWS,
     gridCols: GRID_COLS,
     radiusMiles: RADIUS_MILES,
@@ -181,43 +219,59 @@ export async function POST(req: NextRequest) {
     .from("scans")
     .upsert({ timestamp, payload: scan }, { onConflict: "timestamp" });
   if (scanErr) {
-    console.error("[auto-scan] scan save failed:", scanErr);
+    console.error("[auto-scan/scan] scan save failed:", scanErr);
     return jsonError(req, 500, "Couldn't save scan.");
   }
 
   const { error: leadErr } = await supabase().from("leads").insert({
     timestamp,
-    business_name: businessName,
-    email,
-    phone: phone ?? null,
-    keyword,
-    notes: notes ?? null,
+    business_name: fields.businessName,
+    email: fields.email,
+    phone: fields.phone ?? null,
+    keyword: fields.keyword,
+    notes: fields.notes ?? null,
     status: "scanned",
     ip: ip ?? null,
   });
   if (leadErr) {
     // Scan succeeded; lead insert failing is non-fatal for the visitor
     // (they get their report) but we want to know about it.
-    console.error("[auto-scan] lead insert failed:", leadErr);
+    console.error("[auto-scan/scan] lead insert failed:", leadErr);
   }
 
   const reportPath = `/report/${encodeURIComponent(timestamp)}`;
   // Fire-and-forget email. Never block the response on Resend.
   notifyOnSuccess({
     timestamp,
-    businessName,
-    email,
-    phone,
-    keyword,
-    notes,
+    fields,
     reportPath,
     req,
-  }).catch((e) => console.warn("[auto-scan] notify failed:", (e as Error).message));
+  }).catch((e) =>
+    console.warn("[auto-scan/scan] notify failed:", (e as Error).message)
+  );
 
   return NextResponse.json(
     { ok: true, reportPath, deduped: false },
     { headers: corsHeaders(req) }
   );
+}
+
+// --- helpers -----------------------------------------------------------------
+
+function parseAndValidate(body: AutoScanBody): FormFields | { error: string } {
+  const businessName = (body.businessName || "").trim().slice(0, MAX_BUSINESS);
+  const email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
+  const phone = body.phone?.trim().slice(0, MAX_PHONE) || undefined;
+  const keyword = (body.keyword || "").trim().slice(0, MAX_KEYWORD);
+  const notes = body.notes?.trim().slice(0, MAX_NOTES) || undefined;
+
+  if (!businessName || !email || !keyword) {
+    return { error: "Business name, email, and keyword are required." };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: "Invalid email." };
+  }
+  return { businessName, email, phone, keyword, notes };
 }
 
 async function findExistingScanForEmail(
@@ -232,8 +286,8 @@ async function findExistingScanForEmail(
     .maybeSingle();
   if (!data) return null;
   // Confirm a scan row actually exists for this lead. If the lead got
-  // saved without its scan (rare — see save order above), we want to
-  // re-run rather than send them to a 404.
+  // saved without its scan (rare — see save order in handleScan), we want
+  // to re-run rather than send them to a 404.
   const { data: scanRow } = await supabase()
     .from("scans")
     .select("timestamp")
@@ -245,9 +299,9 @@ async function findExistingScanForEmail(
 
 async function resolveBusiness(businessName: string): Promise<TargetBusiness> {
   // Bias to Grayson County center with a generous radius so the search
-  // reaches any business in the county. We need ratings here? No — the
-  // picker UI uses ratings to disambiguate, but auto-scan trusts the top
-  // hit. Keep this on Essentials tier to save the Enterprise call.
+  // reaches any business in the county. We don't need ratings here — the
+  // confirmation card just needs name + address. Keeping this on Essentials
+  // tier saves the Enterprise call.
   const results = await searchPlaces({
     textQuery: businessName,
     lat: GRAYSON_CENTER[0],
@@ -318,11 +372,7 @@ function findRank(places: PlaceResult[], targetPlaceId: string): number | null {
 
 async function notifyOnSuccess(args: {
   timestamp: string;
-  businessName: string;
-  email: string;
-  phone?: string;
-  keyword: string;
-  notes?: string;
+  fields: FormFields;
   reportPath: string;
   req: NextRequest;
 }) {
@@ -331,19 +381,22 @@ async function notifyOnSuccess(args: {
   const from = process.env.LEADS_FROM_EMAIL;
   if (!apiKey || !to || !from) return;
 
-  const origin = args.req.headers.get("origin") || `https://${args.req.headers.get("host") || ""}`;
+  const { fields } = args;
+  const origin =
+    args.req.headers.get("origin") ||
+    `https://${args.req.headers.get("host") || ""}`;
   const reportUrl = `${origin}${args.reportPath}`;
-  const subject = `New auto-audit completed — ${args.businessName}`;
+  const subject = `New auto-audit completed — ${fields.businessName}`;
   const html = `
     <div style="font-family:system-ui,sans-serif;line-height:1.5;color:#14161a">
       <h2 style="margin:0 0 12px">New audit ran automatically</h2>
       <p style="margin:0 0 18px;color:#6a655a">${new Date(args.timestamp).toLocaleString()}</p>
       <table style="border-collapse:collapse;font-size:14px">
-        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Business</td><td style="padding:4px 0"><strong>${escapeHtml(args.businessName)}</strong></td></tr>
-        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Email</td><td style="padding:4px 0"><a href="mailto:${encodeURIComponent(args.email)}">${escapeHtml(args.email)}</a></td></tr>
-        ${args.phone ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Phone</td><td style="padding:4px 0">${escapeHtml(args.phone)}</td></tr>` : ""}
-        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Keyword</td><td style="padding:4px 0">${escapeHtml(args.keyword)}</td></tr>
-        ${args.notes ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Notes</td><td style="padding:4px 0;white-space:pre-wrap">${escapeHtml(args.notes)}</td></tr>` : ""}
+        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Business</td><td style="padding:4px 0"><strong>${escapeHtml(fields.businessName)}</strong></td></tr>
+        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Email</td><td style="padding:4px 0"><a href="mailto:${encodeURIComponent(fields.email)}">${escapeHtml(fields.email)}</a></td></tr>
+        ${fields.phone ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Phone</td><td style="padding:4px 0">${escapeHtml(fields.phone)}</td></tr>` : ""}
+        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Keyword</td><td style="padding:4px 0">${escapeHtml(fields.keyword)}</td></tr>
+        ${fields.notes ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Notes</td><td style="padding:4px 0;white-space:pre-wrap">${escapeHtml(fields.notes)}</td></tr>` : ""}
         <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Report</td><td style="padding:4px 0"><a href="${reportUrl}">${reportUrl}</a></td></tr>
       </table>
     </div>
@@ -357,7 +410,7 @@ async function notifyOnSuccess(args: {
     body: JSON.stringify({
       from,
       to,
-      reply_to: args.email,
+      reply_to: fields.email,
       subject,
       html,
     }),
