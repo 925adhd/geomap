@@ -22,6 +22,26 @@ function pinColor(p: ScanPoint): string {
   return "#c96a12";
 }
 
+function buildTooltip(p: ScanPoint, targetName: string): string {
+  if (p.error) {
+    return `<strong>Scan failed</strong><br/><span class="rp-tt-muted">${esc(p.error)}</span>`;
+  }
+  const rankLine =
+    p.rank === null
+      ? `<strong>${esc(targetName)}</strong> not in top 20 here`
+      : `<strong>${esc(targetName)}</strong> ranks <strong>#${p.rank}</strong> here`;
+  const topLine = p.topResult
+    ? `<div class="rp-tt-row"><span class="rp-tt-label">Top result</span> ${esc(p.topResult)}</div>`
+    : "";
+  const top3Line =
+    p.topThree && p.topThree.length > 0
+      ? `<div class="rp-tt-row"><span class="rp-tt-label">Top 3</span> ${p.topThree
+          .map((n) => esc(n))
+          .join(" · ")}</div>`
+      : "";
+  return `<div class="rp-tt"><div class="rp-tt-rank">${rankLine}</div>${topLine}${top3Line}</div>`;
+}
+
 function esc(s: string): string {
   return String(s).replace(
     /[&<>"']/g,
@@ -84,15 +104,23 @@ export function ReportMap({ points, target, bounds }: Props) {
       for (const p of points) {
         const color = pinColor(p);
         const label = p.error ? "!" : p.rank === null ? "20+" : String(p.rank);
-        L.marker([p.lat, p.lng], {
+        const marker = L.marker([p.lat, p.lng], {
           icon: L.divIcon({
             className: "rp-pin",
             html: `<div class="rp-pin-inner" style="background:${color}">${esc(label)}</div>`,
             iconSize: [30, 30],
             iconAnchor: [15, 15],
           }),
-          interactive: false,
+          // interactive=true so the tooltip fires on hover. The map itself
+          // stays locked (no drag/zoom) — only the pins respond.
+          interactive: true,
         }).addTo(map);
+        marker.bindTooltip(buildTooltip(p, target.name), {
+          direction: "top",
+          offset: [0, -8],
+          className: "rp-pin-tooltip no-print",
+          opacity: 1,
+        });
       }
 
       if (target.location) {

@@ -1418,6 +1418,39 @@ progress { width: 100%; height: 6px; }
   .rp-recommendation { page-break-inside: avoid; }
 }
 
+/* --- Report map pin tooltip (hover only, hidden in print) --- */
+.rp-pin-tooltip.leaflet-tooltip {
+  background: #14161a;
+  color: #faf9f5;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: var(--rp-body, system-ui), system-ui, sans-serif;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+  max-width: 280px;
+  white-space: normal;
+}
+.rp-pin-tooltip.leaflet-tooltip::before { display: none; }
+.rp-tt-rank { margin-bottom: 6px; }
+.rp-tt-rank strong { color: #faf9f5; }
+.rp-tt-row { margin-top: 4px; color: rgba(250, 249, 245, 0.85); }
+.rp-tt-label {
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #d4a017;
+  font-weight: 700;
+}
+.rp-tt-muted { color: rgba(250, 249, 245, 0.7); }
+
+/* Pins still need pointer cursor in interactive mode */
+.rp-pin { cursor: default; }
+.rp-pin-inner { cursor: pointer; }
+
 /* --- Report CTA / sales block --- */
 .rp-cta {
   margin: 48px 0 0;
