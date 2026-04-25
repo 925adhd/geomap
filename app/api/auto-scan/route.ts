@@ -214,14 +214,15 @@ async function handleScan(
     points,
   };
 
-  // Auto-scan call accounting: 1 Essentials call for the resolve + one per
-  // grid point that actually hit Google. Errors thrown inside the batch
-  // (network, HTTP, parse) all happened post-fetch, so they count.
-  // PlacesBudgetError aborts before any save happens, so we never reach here
-  // with an under-counted scan.
-  const essentialsCalls = 1 + grid.length;
-  const enterpriseCalls = 0;
-  const estimatedCostUsd = costForCalls(essentialsCalls, enterpriseCalls);
+  // Auto-scan call accounting: 1 Pro call for the resolve + one per grid
+  // point that actually hit Google. Errors thrown inside the batch (network,
+  // HTTP, parse) all happened post-fetch, so they count. PlacesBudgetError
+  // aborts before any save happens, so we never reach here with an
+  // under-counted scan. Auto-scan never includes ratings, so the
+  // Enterprise+Atmosphere counter stays at 0.
+  const proCalls = 1 + grid.length;
+  const enterpriseAtmosphereCalls = 0;
+  const estimatedCostUsd = costForCalls(proCalls, enterpriseAtmosphereCalls);
 
   // Save scan first; if that fails the lead is useless to us (no report to
   // link to) so we'd rather surface the error than save an orphan lead.
@@ -231,8 +232,8 @@ async function handleScan(
       {
         timestamp,
         payload: scan,
-        essentials_calls: essentialsCalls,
-        enterprise_calls: enterpriseCalls,
+        pro_calls: proCalls,
+        enterprise_atmosphere_calls: enterpriseAtmosphereCalls,
         estimated_cost_usd: estimatedCostUsd,
       },
       { onConflict: "timestamp" }

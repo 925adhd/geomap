@@ -8,24 +8,31 @@ type SaveBody =
   | Scan
   | {
       scan: Scan;
-      essentialsCalls?: number;
-      enterpriseCalls?: number;
+      proCalls?: number;
+      enterpriseAtmosphereCalls?: number;
     };
 
 function unwrap(body: SaveBody): {
   scan: Scan;
-  essentialsCalls: number;
-  enterpriseCalls: number;
+  proCalls: number;
+  enterpriseAtmosphereCalls: number;
 } {
   if ("scan" in body && body.scan) {
     return {
       scan: body.scan,
-      essentialsCalls: Math.max(0, Math.floor(body.essentialsCalls ?? 0)),
-      enterpriseCalls: Math.max(0, Math.floor(body.enterpriseCalls ?? 0)),
+      proCalls: Math.max(0, Math.floor(body.proCalls ?? 0)),
+      enterpriseAtmosphereCalls: Math.max(
+        0,
+        Math.floor(body.enterpriseAtmosphereCalls ?? 0)
+      ),
     };
   }
   // Legacy shape: bare Scan in the body. Cost columns get 0.
-  return { scan: body as Scan, essentialsCalls: 0, enterpriseCalls: 0 };
+  return {
+    scan: body as Scan,
+    proCalls: 0,
+    enterpriseAtmosphereCalls: 0,
+  };
 }
 
 // All scan-store endpoints are admin-only. The public /report/[timestamp]
@@ -52,17 +59,17 @@ export async function POST(req: NextRequest) {
   if (denied) return denied;
 
   const body = (await req.json()) as SaveBody;
-  const { scan, essentialsCalls, enterpriseCalls } = unwrap(body);
+  const { scan, proCalls, enterpriseAtmosphereCalls } = unwrap(body);
   if (!scan?.timestamp || !scan?.target?.placeId) {
     return NextResponse.json({ error: "Invalid scan payload" }, { status: 400 });
   }
-  const estimatedCostUsd = costForCalls(essentialsCalls, enterpriseCalls);
+  const estimatedCostUsd = costForCalls(proCalls, enterpriseAtmosphereCalls);
   const { error } = await supabase().from("scans").upsert(
     {
       timestamp: scan.timestamp,
       payload: scan,
-      essentials_calls: essentialsCalls,
-      enterprise_calls: enterpriseCalls,
+      pro_calls: proCalls,
+      enterprise_atmosphere_calls: enterpriseAtmosphereCalls,
       estimated_cost_usd: estimatedCostUsd,
     },
     { onConflict: "timestamp" }

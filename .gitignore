@@ -12,3 +12,6 @@ Thumbs.db
 # Local lead/scan/usage stores. These contain real customer emails
 # (leads.json) and historical Places API spend (usage.json). Never commit.
 data/
+
+# Claude Code local settings
+.claude/

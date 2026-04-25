@@ -45,13 +45,13 @@ Full scan payload as JSONB. Written by `POST /api/scans` (admin-only)
 and `POST /api/auto-scan` (public auto-audit), read by `GET /api/scans`
 and the public report page `/report/[timestamp]`.
 
-| column              | type           | notes                                  |
-|---------------------|----------------|----------------------------------------|
-| timestamp           | timestamptz    | primary key                            |
-| payload             | jsonb          | not null — full Scan object            |
-| essentials_calls    | integer        | not null default 0 — Places Essentials calls this scan made |
-| enterprise_calls    | integer        | not null default 0 — Places Enterprise calls this scan made |
-| estimated_cost_usd  | numeric(8,4)   | not null default 0 — what this scan would cost outside the free tier |
+| column                       | type           | notes                                  |
+|------------------------------|----------------|----------------------------------------|
+| timestamp                    | timestamptz    | primary key                            |
+| payload                      | jsonb          | not null — full Scan object            |
+| pro_calls                    | integer        | not null default 0 — Places API Text Search **Pro** calls this scan made |
+| enterprise_atmosphere_calls  | integer        | not null default 0 — Places API Text Search **Enterprise + Atmosphere** calls (with rating fields) |
+| estimated_cost_usd           | numeric(8,4)   | not null default 0 — what this scan would cost outside the free tier |
 
 Indexes:
 - `scans_timestamp_idx` on `(timestamp desc)`
@@ -59,20 +59,35 @@ Indexes:
 Cost columns are populated at save time so each row records what the
 scan actually cost. Sort by `estimated_cost_usd desc` in the Supabase
 table editor to spot expensive scans; sum it for monthly totals. Rows
-saved before this column was added show `0` (we didn't track them).
+saved before these columns existed show `0` (we didn't track them).
 
 ### `usage`
 One row per UTC month. Tracks Places API call volume so `/api/places`
 can enforce the monthly cost cap.
 
-| column            | type         | notes                                  |
-|-------------------|--------------|----------------------------------------|
-| month             | text         | primary key, format `YYYY-MM` UTC      |
-| essentials_calls  | integer      | not null default 0                     |
-| enterprise_calls  | integer      | not null default 0                     |
-| last_updated      | timestamptz  | not null default now()                 |
+| column                       | type         | notes                                  |
+|------------------------------|--------------|----------------------------------------|
+| month                        | text         | primary key, format `YYYY-MM` UTC      |
+| pro_calls                    | integer      | not null default 0 — Places Text Search Pro tier |
+| enterprise_atmosphere_calls  | integer      | not null default 0 — Places Text Search Enterprise + Atmosphere tier |
+| last_updated                 | timestamptz  | not null default now()                 |
 
 No extra indexes — primary key handles all lookups.
+
+## Pricing model (as of pulled from Google 2026-04-25)
+
+Tier mapping for our `places:searchText` calls:
+- **Default field mask** (id, displayName, formattedAddress, location)
+  → **Places API Text Search Pro** — 5,000 free/mo, then $32/1k
+- **With ratings** (adds rating, userRatingCount)
+  → **Places API Text Search Enterprise + Atmosphere** — 1,000 free/mo, then $40/1k
+
+Free-tier capacity per month at our scan size:
+- ~100 auto-scans (5,000 ÷ 50 calls per scan) before any Pro charges
+- ~1,000 admin business-picker uses before any Enterprise+Atmosphere charges
+
+`PLACES_MONTHLY_BUDGET_USD` (default 25) caps real spend regardless of
+which tier is being burned through.
 
 ## Code that touches Supabase
 
@@ -111,4 +126,5 @@ When the schema changes:
 2. Edit this file's table section to match.
 3. Bump the "Last verified" date below.
 
-Last verified: 2026-04-25 (added per-scan cost columns to scans table)
+Last verified: 2026-04-25 (renamed cost columns to match actual Google
+SKUs: pro_calls + enterprise_atmosphere_calls)

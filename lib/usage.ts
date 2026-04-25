@@ -5,33 +5,28 @@ import { supabase } from "./supabase";
 // of each month — we just use the current "YYYY-MM" as the row key.
 // One row per month in the `usage` table; missing row = zero calls.
 
-// Per Google Maps Platform pricing (Places API New, Text Search):
-// Essentials: 10,000 free/mo, then $5 per 1,000 (next tier kicks in at 100K).
-// Enterprise: 1,000 free/mo, then $35 per 1,000.
-// Cap math uses the first paid tier; if you ever exceed 100K Essentials in
-// a month you'll want to revisit these constants.
-const ESSENTIALS_FREE = 10_000;
-const ESSENTIALS_RATE_PER_CALL = 5 / 1000;
-const ENTERPRISE_FREE = 1_000;
-const ENTERPRISE_RATE_PER_CALL = 35 / 1000;
-
-// Per-scan cost estimate, ignoring the monthly free tier. Used to populate
-// the per-scan cost column so each row reflects what the scan would cost
-// a paying customer; the global usage counter handles real spend tracking.
-export function costForCalls(
-  essentialsCalls: number,
-  enterpriseCalls: number
-): number {
-  return (
-    essentialsCalls * ESSENTIALS_RATE_PER_CALL +
-    enterpriseCalls * ENTERPRISE_RATE_PER_CALL
-  );
-}
+// Per Google Maps Platform pricing list (Places API New, Text Search):
+//
+//   Pro tier — 5,000 free/mo, then $32/1k
+//     Triggered by field mask: id, displayName, formattedAddress, location
+//     i.e. our default scan and resolve calls.
+//
+//   Enterprise + Atmosphere tier — 1,000 free/mo, then $40/1k
+//     Triggered by adding `rating` / `userRatingCount` to the field mask
+//     i.e. the admin business-picker call (includeRatings=true).
+//
+// Cap math uses the first paid tier; if you ever push past 100k Pro or
+// 100k Enterprise+Atmosphere calls in a month you'll want to revisit
+// these constants — Google's higher-volume tiers are cheaper.
+const PRO_FREE = 5_000;
+const PRO_RATE_PER_CALL = 32 / 1000;
+const ENTERPRISE_ATMOSPHERE_FREE = 1_000;
+const ENTERPRISE_ATMOSPHERE_RATE_PER_CALL = 40 / 1000;
 
 type Usage = {
   month: string; // "YYYY-MM" UTC
-  essentialsCalls: number;
-  enterpriseCalls: number;
+  proCalls: number;
+  enterpriseAtmosphereCalls: number;
   lastUpdated: string;
 };
 
@@ -43,8 +38,8 @@ function currentMonth(): string {
 function freshUsage(): Usage {
   return {
     month: currentMonth(),
-    essentialsCalls: 0,
-    enterpriseCalls: 0,
+    proCalls: 0,
+    enterpriseAtmosphereCalls: 0,
     lastUpdated: new Date().toISOString(),
   };
 }
@@ -53,43 +48,59 @@ async function readUsage(): Promise<Usage> {
   const month = currentMonth();
   const { data, error } = await supabase()
     .from("usage")
-    .select("month, essentials_calls, enterprise_calls, last_updated")
+    .select("month, pro_calls, enterprise_atmosphere_calls, last_updated")
     .eq("month", month)
     .maybeSingle();
   if (error || !data) return freshUsage();
   return {
     month: data.month,
-    essentialsCalls: data.essentials_calls ?? 0,
-    enterpriseCalls: data.enterprise_calls ?? 0,
+    proCalls: data.pro_calls ?? 0,
+    enterpriseAtmosphereCalls: data.enterprise_atmosphere_calls ?? 0,
     lastUpdated: data.last_updated ?? new Date().toISOString(),
   };
 }
 
 export async function recordPlacesCall(includeRatings: boolean) {
   const usage = await readUsage();
-  if (includeRatings) usage.enterpriseCalls += 1;
-  else usage.essentialsCalls += 1;
+  if (includeRatings) usage.enterpriseAtmosphereCalls += 1;
+  else usage.proCalls += 1;
   usage.lastUpdated = new Date().toISOString();
   await supabase()
     .from("usage")
     .upsert(
       {
         month: usage.month,
-        essentials_calls: usage.essentialsCalls,
-        enterprise_calls: usage.enterpriseCalls,
+        pro_calls: usage.proCalls,
+        enterprise_atmosphere_calls: usage.enterpriseAtmosphereCalls,
         last_updated: usage.lastUpdated,
       },
       { onConflict: "month" }
     );
 }
 
+// Per-scan cost estimate, ignoring the monthly free tier. Used to populate
+// the per-scan cost column so each row reflects what the scan would cost
+// a paying customer; the global usage counter handles real spend tracking.
+export function costForCalls(
+  proCalls: number,
+  enterpriseAtmosphereCalls: number
+): number {
+  return (
+    proCalls * PRO_RATE_PER_CALL +
+    enterpriseAtmosphereCalls * ENTERPRISE_ATMOSPHERE_RATE_PER_CALL
+  );
+}
+
 export async function getEstimatedCostUsd(): Promise<number> {
   const usage = await readUsage();
-  const essentialsBilled = Math.max(0, usage.essentialsCalls - ESSENTIALS_FREE);
-  const enterpriseBilled = Math.max(0, usage.enterpriseCalls - ENTERPRISE_FREE);
+  const proBilled = Math.max(0, usage.proCalls - PRO_FREE);
+  const eaBilled = Math.max(
+    0,
+    usage.enterpriseAtmosphereCalls - ENTERPRISE_ATMOSPHERE_FREE
+  );
   return (
-    essentialsBilled * ESSENTIALS_RATE_PER_CALL +
-    enterpriseBilled * ENTERPRISE_RATE_PER_CALL
+    proBilled * PRO_RATE_PER_CALL +
+    eaBilled * ENTERPRISE_ATMOSPHERE_RATE_PER_CALL
   );
 }
 

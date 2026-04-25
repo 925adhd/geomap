@@ -291,10 +291,10 @@ export default function Page() {
 
     const results: ScanPoint[] = [];
     // Per-scan API call counters. Each grid call goes through /api/places
-    // without includeRatings (Essentials tier), so we count essentials only.
+    // without includeRatings (Pro tier), so we count pro_calls only here.
     // Calls that throw "budget_exceeded" before hitting Google don't count;
     // any other error happened post-fetch and does count.
-    let essentialsCalls = 0;
+    let proCalls = 0;
     for (let i = 0; i < points.length; i++) {
       const pt = points[i];
       setProgress({
@@ -310,7 +310,7 @@ export default function Page() {
           5000,
           20
         );
-        essentialsCalls += 1;
+        proCalls += 1;
         const rank = findRank(places, target.placeId);
         const topResult = places[0]?.displayName?.text || null;
         const topThree = places
@@ -322,7 +322,7 @@ export default function Page() {
         addRankPin(result);
       } catch (e) {
         const msg = (e as Error).message;
-        if (!msg.toLowerCase().includes("budget")) essentialsCalls += 1;
+        if (!msg.toLowerCase().includes("budget")) proCalls += 1;
         const result: ScanPoint = { ...pt, rank: null, error: msg };
         results.push(result);
         addRankPin(result);
@@ -359,7 +359,7 @@ export default function Page() {
       points: results,
     };
     setLastScan(scan);
-    await saveScanToServer(scan, { essentialsCalls, enterpriseCalls: 0 });
+    await saveScanToServer(scan, { proCalls, enterpriseAtmosphereCalls: 0 });
     drawTargetMarker(target);
 
     setProgress({
@@ -372,7 +372,7 @@ export default function Page() {
 
   async function saveScanToServer(
     scan: Scan,
-    counts?: { essentialsCalls: number; enterpriseCalls: number }
+    counts?: { proCalls: number; enterpriseAtmosphereCalls: number }
   ) {
     try {
       const res = await fetch("/api/scans", {
@@ -380,8 +380,8 @@ export default function Page() {
         headers: { "Content-Type": "application/json", ...adminHeaders() },
         body: JSON.stringify({
           scan,
-          essentialsCalls: counts?.essentialsCalls ?? 0,
-          enterpriseCalls: counts?.enterpriseCalls ?? 0,
+          proCalls: counts?.proCalls ?? 0,
+          enterpriseAtmosphereCalls: counts?.enterpriseAtmosphereCalls ?? 0,
         }),
       });
       if (!res.ok) throw new Error("save failed");
