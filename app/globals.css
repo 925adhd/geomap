@@ -1665,9 +1665,28 @@ progress { width: 100%; height: 6px; }
   .rp-realmap { aspect-ratio: 1 / 1; }
   .rp-map-legend {
     flex-wrap: wrap;
-    gap: 10px 16px;
+    gap: 8px 14px;
     font-size: 10.5px;
   }
+  /* Business name gets its own row so it isn't squeezed next to the
+     color-swatch labels. The remaining swatches wrap naturally below. */
+  .rp-map-legend span:first-child {
+    flex-basis: 100%;
+    margin-bottom: 2px;
+  }
+
+  /* Pin tooltip — on phones the hover/tap tooltip used to swallow the
+     whole map. Constrain width and shrink type so it stays readable
+     without blocking the surrounding pins. */
+  .rp-pin-tooltip.leaflet-tooltip {
+    max-width: 220px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .rp-tt-rank { margin-bottom: 4px; }
+  .rp-tt-row { margin-top: 3px; }
+  .rp-tt-label { font-size: 9px; margin-right: 4px; }
 
   .rp-rivals li {
     grid-template-columns: 32px 1fr;
