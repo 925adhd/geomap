@@ -489,17 +489,31 @@ a.fl-upsell:hover {
   max-width: 480px;
   margin: 0 auto;
 }
-.au-confirm-back {
+/* Plain-text "back" link disguised as a button. Overrides the global
+   `button { background: #2563eb }` rule (used by the admin dashboard)
+   on every state, including hover, where it would otherwise repaint blue. */
+.au-confirm-back,
+.au-confirm-back:hover,
+.au-confirm-back:focus,
+.au-confirm-back:active {
   background: transparent;
   border: none;
   color: var(--fl-ink-soft);
   font-family: var(--fl-body);
   font-size: 13px;
-  text-decoration: underline;
+  text-decoration: none;
   cursor: pointer;
-  padding: 8px;
+  padding: 8px 12px;
+  width: auto;
+  margin: 0 auto;
+  display: inline-block;
 }
-.au-confirm-back:hover { color: var(--fl-ink); }
+.au-confirm-back:hover { color: var(--fl-ink); text-decoration: underline; }
+.au-confirm-back:focus-visible {
+  outline: 2px solid var(--fl-emerald);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 /* --- Progress bar --- */
 .au-progress {
