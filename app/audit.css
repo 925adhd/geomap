@@ -107,7 +107,7 @@
 }
 
 /* --- What you get --- */
-.fl-what { margin-bottom: 36px; }
+.fl-what { margin: 44px 0 36px; }
 .fl-bullets {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -142,13 +142,16 @@
   margin: 0;
 }
 
-/* --- Sample heatmap mockup --- */
+/* --- Sample heatmap mockup ---
+   Cap the width on desktop so the example doesn't dominate the page;
+   on mobile it falls back to full-width inside .fl-doc. */
 .fl-mockup {
-  margin: 28px 0 0;
+  margin: 28px auto 0;
   padding: 18px 18px 16px;
   background: #f0ece0;
   border: 1px solid #cdc6b4;
   border-radius: 16px;
+  max-width: 640px;
 }
 .fl-mockup-tag {
   font-size: 10px;
@@ -157,6 +160,16 @@
   font-weight: 700;
   margin-bottom: 10px;
   text-align: center;
+}
+/* Descriptive line above the example heatmap. Italic + centered so it
+   reads as a caption, but full readability (not the small all-caps tag). */
+.fl-mockup-intro {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--fl-ink-soft);
+  text-align: center;
+  font-style: italic;
+  line-height: 1.5;
 }
 .fl-mockup-image {
   display: block;
@@ -172,6 +185,14 @@
   text-align: center;
   font-style: italic;
   line-height: 1.5;
+}
+/* When the caption is just the attribution, render it small and
+   de-emphasized so it reads as a footnote. */
+.fl-mockup-caption--attr-only {
+  font-size: 10.5px;
+  font-style: normal;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
 }
 
 /* --- Upsell highlight --- */

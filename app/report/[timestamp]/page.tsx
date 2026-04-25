@@ -208,7 +208,8 @@ export default async function ReportPage({
             <div>
               <span>Scan points</span>
               {scan.points.length} ({gridLabel(scan)} grid ·{" "}
-              {scan.radiusMiles} mi radius)
+              {Math.round((scan.radiusMiles * Math.SQRT2) / 5) * 5}-mile
+              radius)
             </div>
           </div>
         </section>

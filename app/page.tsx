@@ -44,7 +44,9 @@ function MapMockup() {
       className="fl-mockup"
       aria-label="Sample local rank heatmap report for a Grayson County, Kentucky car dealership"
     >
-      <div className="fl-mockup-tag">ACTUAL REPORT · LEITCHFIELD, KY</div>
+      <div className="fl-mockup-intro">
+        Real heatmap from a car dealership right here in Leitchfield, KY.
+      </div>
       <img
         src="/audit-sample-heatmap.webp"
         alt="Sample local rank heatmap showing a Leitchfield car dealership ranking #2 at its own location with surrounding points ranging from top 3 to not found, plus a top competitors breakdown"
@@ -54,10 +56,8 @@ function MapMockup() {
         fetchPriority="high"
         className="fl-mockup-image"
       />
-      <figcaption className="fl-mockup-caption">
-        Real heatmap from a car dealership right here in Leitchfield, KY.
-        Your map will use your business and the keyword you choose. Map ©
-        OpenStreetMap contributors. Ranking data powered by Google.
+      <figcaption className="fl-mockup-caption fl-mockup-caption--attr-only">
+        Map © OpenStreetMap contributors. Ranking data powered by Google.
       </figcaption>
     </figure>
   );
@@ -250,8 +250,6 @@ export default function AuditPage() {
                 </p>
               </section>
 
-              <MapMockup />
-
               <section className="fl-problem">
                 <div className="fl-problem-ink">THE PROBLEM</div>
                 <p>
@@ -264,6 +262,8 @@ export default function AuditPage() {
                 </p>
               </section>
 
+              <MapMockup />
+
               <section className="fl-what">
                 <h2>
                   What you&rsquo;ll <em>get</em>
@@ -273,7 +273,7 @@ export default function AuditPage() {
                     <div className="fl-bullet-num">01</div>
                     <h3>A real map</h3>
                     <p>
-                      49 scan points across a 15-mile radius around your
+                      49 scan points across a 20-mile radius around your
                       business, each showing your exact rank for the
                       keyword customers are typing.
                     </p>
@@ -305,7 +305,7 @@ export default function AuditPage() {
                   the report is yours to keep.
                 </p>
                 <p>
-                  Most gray spots aren&rsquo;t a sign your business is bad.
+                  Most weak spots aren&rsquo;t a sign your business is bad.
                   They mean your website isn&rsquo;t doing its job, so
                   calls go to people who aren&rsquo;t even better than
                   you.
@@ -455,7 +455,7 @@ export default function AuditPage() {
                     Your business must have a Google Business Profile
                   </strong>
                   , ideally with a handful of reviews. Brand-new or unlisted
-                  businesses won&rsquo;t produce useful data yet.
+                  businesses won&rsquo;t produce useful data yet.{" "}
                   {/* GBP link gets its own line on mobile via .au-fine-gbp
                       so it doesn't dangle as orphaned text after a wrap. */}
                   <span className="au-fine-gbp">
@@ -519,7 +519,7 @@ export default function AuditPage() {
                 We&rsquo;re checking{" "}
                 <strong>{businessName || "your business"}</strong> against{" "}
                 <em>&ldquo;{keyword}&rdquo;</em> at 49 points across a
-                15-mile radius. This usually takes about 30 seconds.
+                20-mile radius. This usually takes about 30 seconds.
               </p>
               <div
                 className="au-progress"
