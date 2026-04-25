@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Explicit cross-origin allow-list. Browsers POSTing from these origins
-// can call /api/leads + /api/places. Anything else cross-origin is
-// rejected so a third-party site can't burn the Google Places budget
-// by hitting /api/places from their page.
-//
-// Same-origin requests (the geomap dashboard calling its own API on
-// whatever Vercel domain it's deployed at) are always allowed — see
-// isSameOrigin below. That covers geomap-delta.vercel.app, preview
-// deploy URLs, geomap.studio925.design once DNS flips, and localhost.
-const ALLOWED_ORIGINS = new Set<string>([
-  "https://studio925.design",
-  "https://www.studio925.design",
-]);
+// Cross-origin allow-list, sourced from env so the trusted domain set
+// isn't published in this repo. Format: comma-separated absolute
+// origins, e.g. `https://example.com,https://www.example.com`.
+// Same-origin requests are always allowed via isSameOrigin below, so
+// the env var only needs to list trusted *external* callers.
+const ALLOWED_ORIGINS = new Set<string>(
+  (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
 
 function isSameOrigin(req: NextRequest, origin: string): boolean {
   try {
