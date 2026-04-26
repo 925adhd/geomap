@@ -1456,6 +1456,88 @@ progress { width: 100%; height: 6px; }
   .rp-recommendation { page-break-inside: avoid; }
 }
 
+/* --- Tap-to-show pin detail card (under the map) ---
+   Always rendered. Empty-state hint until the user taps a pin, then
+   reflects that pin's rank/competitors. Replaces the in-map tooltip
+   on mobile (where leaflet-container clips the tooltip at edges). */
+.rp-pin-detail {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--rp-ink);
+  color: var(--rp-paper);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.rp-pin-detail--empty {
+  color: rgba(250, 249, 245, 0.7);
+  font-style: italic;
+  text-align: center;
+}
+.rp-pin-detail-list {
+  list-style: none;
+  margin-top: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rp-pin-detail-list li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.rp-pin-detail-rk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(250, 249, 245, 0.18);
+  color: #faf9f5;
+  font-size: 11px;
+  font-weight: 700;
+}
+.rp-pin-detail-nm {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  color: rgba(250, 249, 245, 0.92);
+  font-size: 13px;
+  line-height: 1.35;
+}
+.rp-pin-detail-you {
+  color: var(--rp-mustard);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-left: 4px;
+}
+/* "You" row in the mobile detail card — matches the navy crosshair
+   target marker on the map for instant visual recognition. */
+.rp-pin-detail-list li.is-you {
+  background: rgba(212, 160, 23, 0.15);
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.rp-pin-detail-list li.is-you .rp-pin-detail-rk {
+  background: #1e3a5f;
+  color: #faf9f5;
+  box-shadow: 0 0 0 2px #faf9f5;
+}
+.rp-pin-detail-list li.is-you .rp-pin-detail-nm {
+  color: #faf9f5;
+  font-weight: 700;
+}
+.rp-pin-detail-muted {
+  color: rgba(250, 249, 245, 0.7);
+  font-style: italic;
+}
+
 /* --- Report map pin tooltip (hover only, hidden in print) --- */
 .rp-pin-tooltip.leaflet-tooltip {
   background: #14161a;
@@ -1467,23 +1549,81 @@ progress { width: 100%; height: 6px; }
   line-height: 1.45;
   font-family: var(--rp-body, system-ui), system-ui, sans-serif;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
-  max-width: 280px;
+  /* min-width forces Leaflet to render at a usable width — without it
+     the tooltip shrinks to the narrowest word-wrap and "Vendors' Village
+     of Leitchfield" stacks vertically. max-width caps it for very long
+     competitor lists. */
+  min-width: 280px;
+  max-width: 360px;
   white-space: normal;
 }
+
+/* On desktop the in-map tooltip is enough; the tap-to-show card under
+   the map is mobile-only (its empty state shouldn't show on a viewport
+   that already has hover). */
+@media (min-width: 761px) {
+  .rp-pin-detail { display: none; }
+}
 .rp-pin-tooltip.leaflet-tooltip::before { display: none; }
-.rp-tt-rank { margin-bottom: 6px; }
-.rp-tt-rank strong { color: #faf9f5; }
-.rp-tt-row { margin-top: 4px; color: rgba(250, 249, 245, 0.85); }
-.rp-tt-label {
-  display: inline-block;
-  margin-right: 6px;
+.rp-tt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rp-tt-list li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.rp-tt-rk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(250, 249, 245, 0.18);
+  color: #faf9f5;
   font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0;
+  align-self: center;
+}
+.rp-tt-nm {
+  color: rgba(250, 249, 245, 0.92);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.rp-tt-you-tag {
   color: #d4a017;
   font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
-.rp-tt-muted { color: rgba(250, 249, 245, 0.7); }
+/* "You" row — match the navy crosshair target marker used on the map
+   itself (#1e3a5f + white halo) so the visual reads as "this is your
+   business" without needing a label to explain it. */
+.rp-tt-list li.is-you {
+  background: rgba(212, 160, 23, 0.15);
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.rp-tt-list li.is-you .rp-tt-rk {
+  background: #1e3a5f;
+  color: #faf9f5;
+  box-shadow: 0 0 0 2px #faf9f5;
+}
+.rp-tt-list li.is-you .rp-tt-nm {
+  color: #faf9f5;
+  font-weight: 700;
+}
+.rp-tt-muted { color: rgba(250, 249, 245, 0.7); font-style: italic; }
 
 /* Pins still need pointer cursor in interactive mode */
 .rp-pin { cursor: default; }
@@ -1602,9 +1742,26 @@ progress { width: 100%; height: 6px; }
   margin-bottom: 4px;
 }
 .rp-cta-contact-value {
+  display: block;
   color: var(--rp-paper);
   font-weight: 600;
   font-size: 14px;
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+a.rp-cta-contact-value:hover { color: var(--rp-mustard); }
+.rp-cta-contact-sub {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #a8a394;
+  text-decoration: none;
+  transition: color 0.12s ease;
+}
+.rp-cta-contact-sub:hover { color: var(--rp-mustard); }
+@media print {
+  .rp-cta-contact-sub { display: none; }
 }
 
 @media print {
@@ -1713,18 +1870,10 @@ progress { width: 100%; height: 6px; }
     margin-bottom: 2px;
   }
 
-  /* Pin tooltip — on phones the hover/tap tooltip used to swallow the
-     whole map. Constrain width and shrink type so it stays readable
-     without blocking the surrounding pins. */
-  .rp-pin-tooltip.leaflet-tooltip {
-    max-width: 220px;
-    padding: 8px 10px;
-    font-size: 11px;
-    line-height: 1.4;
-  }
-  .rp-tt-rank { margin-bottom: 4px; }
-  .rp-tt-row { margin-top: 3px; }
-  .rp-tt-label { font-size: 9px; margin-right: 4px; }
+  /* Tooltip is hidden on mobile — the leaflet-container clips it at the
+     map edges so edge pins lose half the text. Mobile users get the
+     tap-driven .rp-pin-detail card under the map instead. */
+  .rp-pin-tooltip.leaflet-tooltip { display: none !important; }
 
   .rp-rivals li {
     grid-template-columns: 32px 1fr;
@@ -1809,17 +1958,39 @@ progress { width: 100%; height: 6px; }
 @media print {
   @page { size: letter; margin: 0.5in; }
   html, body { background: white !important; }
+  /* Force every element in the report to keep its background colors and
+     fills when printed/exported. Without this, Chrome's "Save as PDF"
+     strips backgrounds (legend dots, score colors, CTA block, rival
+     bars) and the doc loses its visual hierarchy. */
+  .rp,
+  .rp * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   .rp {
     background: white !important;
     padding: 0 !important;
     min-height: 0;
   }
   .no-print { display: none !important; }
+  /* Belt-and-suspenders: explicitly hide the tap-to-show pin detail
+     card. Some PDF tools ignore the .no-print class but honor element
+     selectors inside @media print. */
+  .rp-pin-detail { display: none !important; }
+  /* Leaflet container's default dark-navy background reads as a "frame"
+     on screen but prints as an ugly empty block when the county bounds
+     are wider than the aspect-ratio container. Use plain paper. */
+  .rp-realmap .leaflet-container { background: white !important; }
   .rp-doc {
     max-width: 100%;
     margin: 0;
     padding: 0;
     box-shadow: none;
+    /* Print on plain white paper. The cream tint reads great on screen
+       as a "consulting document" feel, but on a printed page it just
+       looks like dingy paper. Highlight boxes (Why-this-matters,
+       Recommendation, CTA, etc.) keep their own backgrounds. */
+    background: white !important;
   }
   .rp-title { font-size: 22px; margin-bottom: 26px; }
   .rp-biz { font-size: 42px; margin-bottom: 16px; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type * as LeafletNS from "leaflet";
 import type { ScanPoint } from "@/lib/types";
 import graysonGeometry from "@/lib/grayson-geometry.json";
@@ -22,24 +22,35 @@ function pinColor(p: ScanPoint): string {
   return "#c96a12";
 }
 
+// Pin number on the map already shows the owner where they rank, so the
+// tooltip just needs to show who's actually winning #1/#2/#3 at that
+// point. If the owner *is* in top 3 we mark that row "(you)" so they
+// can pick out their own listing in the rivals list.
 function buildTooltip(p: ScanPoint, targetName: string): string {
   if (p.error) {
-    return `<strong>Scan failed</strong><br/><span class="rp-tt-muted">${esc(p.error)}</span>`;
+    return `<span class="rp-tt-muted">Scan failed: ${esc(p.error)}</span>`;
   }
-  const rankLine =
-    p.rank === null
-      ? `<strong>${esc(targetName)}</strong> not in top 20 here`
-      : `<strong>${esc(targetName)}</strong> ranks <strong>#${p.rank}</strong> here`;
-  const topLine = p.topResult
-    ? `<div class="rp-tt-row"><span class="rp-tt-label">Top result</span> ${esc(p.topResult)}</div>`
-    : "";
-  const top3Line =
-    p.topThree && p.topThree.length > 0
-      ? `<div class="rp-tt-row"><span class="rp-tt-label">Top 3</span> ${p.topThree
-          .map((n) => esc(n))
-          .join(" · ")}</div>`
-      : "";
-  return `<div class="rp-tt"><div class="rp-tt-rank">${rankLine}</div>${topLine}${top3Line}</div>`;
+  const top3 = p.topThree ?? [];
+  if (top3.length === 0) {
+    return `<span class="rp-tt-muted">No top results captured here.</span>`;
+  }
+  const items = top3
+    .map((name, i) => {
+      const isYou = isSameBusiness(name, targetName);
+      const cls = isYou ? ' class="is-you"' : "";
+      const youTag = isYou
+        ? ` <span class="rp-tt-you-tag">You</span>`
+        : "";
+      return `<li${cls}><span class="rp-tt-rk">${i + 1}</span><span class="rp-tt-nm">${esc(name)}${youTag}</span></li>`;
+    })
+    .join("");
+  return `<ol class="rp-tt-list">${items}</ol>`;
+}
+
+function isSameBusiness(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return norm(a) === norm(b);
 }
 
 function esc(s: string): string {
@@ -59,6 +70,7 @@ function esc(s: string): string {
 export function ReportMap({ points, target, bounds }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletNS.Map | null>(null);
+  const [selected, setSelected] = useState<ScanPoint | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,12 +127,17 @@ export function ReportMap({ points, target, bounds }: Props) {
           // stays locked (no drag/zoom) — only the pins respond.
           interactive: true,
         }).addTo(map);
+        // In-map tooltip — fine on desktop hover. Hidden via CSS on
+        // mobile because the leaflet-container clips at the map edges,
+        // so edge pins lose half the tooltip. Mobile users get the
+        // detail card below the map instead (driven by marker click).
         marker.bindTooltip(buildTooltip(p, target.name), {
-          direction: "top",
+          direction: "auto",
           offset: [0, -8],
           className: "rp-pin-tooltip no-print",
           opacity: 1,
         });
+        marker.on("click", () => setSelected(p));
       }
 
       if (target.location) {
@@ -143,5 +160,77 @@ export function ReportMap({ points, target, bounds }: Props) {
     };
   }, [points, target, bounds]);
 
-  return <div ref={el} className="rp-realmap" />;
+  // Compute the aspect ratio of the actual map bounds (with longitude
+  // shrunk by cos(lat) so it matches projected meters, not raw degrees).
+  // Setting this on the container means Leaflet's fit-bounds renders
+  // tiles edge-to-edge — no empty space below the map for the leaflet
+  // container's dark-navy background to bleed through in print.
+  const avgLat = (bounds.minLat + bounds.maxLat) / 2;
+  const lngScale = Math.cos((avgLat * Math.PI) / 180);
+  const widthDeg = (bounds.maxLng - bounds.minLng) * lngScale;
+  const heightDeg = bounds.maxLat - bounds.minLat;
+  const aspect =
+    heightDeg > 0 && widthDeg > 0 ? widthDeg / heightDeg : 4 / 3;
+
+  return (
+    <>
+      <div
+        ref={el}
+        className="rp-realmap"
+        style={{ aspectRatio: `${aspect.toFixed(3)}` }}
+      />
+      <PinDetail point={selected} targetName={target.name} />
+    </>
+  );
+}
+
+function PinDetail({
+  point,
+  targetName,
+}: {
+  point: ScanPoint | null;
+  targetName: string;
+}) {
+  if (!point) {
+    return (
+      <div className="rp-pin-detail rp-pin-detail--empty no-print">
+        Tap any pin to see who&rsquo;s ranking #1 there.
+      </div>
+    );
+  }
+  if (point.error) {
+    return (
+      <div className="rp-pin-detail no-print">
+        <span className="rp-pin-detail-muted">
+          Scan failed: {point.error}
+        </span>
+      </div>
+    );
+  }
+  const top3 = point.topThree ?? [];
+  if (top3.length === 0) {
+    return (
+      <div className="rp-pin-detail no-print">
+        <span className="rp-pin-detail-muted">
+          No top results captured here.
+        </span>
+      </div>
+    );
+  }
+  return (
+    <ol className="rp-pin-detail rp-pin-detail-list no-print">
+      {top3.map((name, i) => {
+        const isYou = isSameBusiness(name, targetName);
+        return (
+          <li key={i} className={isYou ? "is-you" : undefined}>
+            <span className="rp-pin-detail-rk">{i + 1}</span>
+            <span className="rp-pin-detail-nm">
+              {name}
+              {isYou && <span className="rp-pin-detail-you"> You</span>}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }

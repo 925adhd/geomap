@@ -67,6 +67,29 @@ async function getScan(timestamp: string): Promise<Scan | null> {
   return (data as { payload: Scan }).payload;
 }
 
+// CTR weights for ranks 1–10. Normalized so rank-1 = 100. The curve is
+// intentionally steep — for local "near me" searches the map pack (top
+// 3) absorbs the great majority of clicks; ranks 4-10 sit below the
+// pack and most users never scroll past it. Anything 11+ or not-found
+// scores 0. The score is "% of customer attention captured vs. a
+// competitor that ranks #1 at every point".
+const CTR_WEIGHT: Record<number, number> = {
+  1: 100,
+  2: 55,
+  3: 35,
+  4: 18,
+  5: 12,
+  6: 8,
+  7: 5,
+  8: 3,
+  9: 2,
+  10: 1,
+};
+function ctrWeight(rank: number | null): number {
+  if (rank === null) return 0;
+  return CTR_WEIGHT[rank] ?? 0;
+}
+
 function buildRecommendation(args: {
   score: number;
   top3Count: number;
@@ -86,31 +109,35 @@ function buildRecommendation(args: {
   const rivalDominance =
     topRival && totalCaptures > 0 ? topRival.steals / totalCaptures : 0;
 
-  // Rule 1: mostly invisible — GBP basics are the bottleneck
-  if (score < 40 || missingPct > 50) {
-    return `Most people in Grayson County can't find you when they search. Before anything else, fill out every single field on your Google Business Profile, add 10 or more recent photos, and double-check your service categories are accurate. That fixes the cheapest, fastest part of the problem.`;
+  // Each rule leads with the ACTION (verb-first), then names the
+  // situation as supporting evidence. The pullquote already carries the
+  // gut-punch; this section's job is to tell the owner what to do.
+
+  // Rule 1: mostly invisible in the map pack — GBP basics are the bottleneck.
+  if (score < 10 || missingPct > 50) {
+    return `Fill out every single field on your Google Business Profile, add 10 or more recent photos, and double-check your service categories. Most local searches in Grayson County aren't finding you in the map pack at all, and the GBP fix is the cheapest, fastest first move.`;
   }
 
-  // Rule 2: one clearly dominant rival — point at them specifically
+  // Rule 2: one clearly dominant rival — point at them specifically.
   if (topRival && topRival.steals >= 5 && rivalDominance > 0.4) {
-    return `${topRival.name} is taking the top spot in ${topRival.steals} of the searches where you should be the obvious choice. Open their Google Business Profile in another tab and compare their review count, photo count, and service categories to yours. That gap is fixable, and it's almost always the place to start.`;
+    return `Open ${topRival.name}'s Google Business Profile in another tab and compare their review count, photo count, and service categories to yours. They're ranking #1 in ${topRival.steals} of the searches where you should be the obvious choice. That gap is almost always fixable.`;
   }
 
-  // Rule 3: strong center but missing edges — needs service-area pages
-  if (score >= 60 && missingPct > 20) {
-    return `You hold the middle of the county, but there are ${missingCount} spots where you don't show up at all. Adding location-specific service pages (one for each town you serve but don't currently rank in) tells Google your service area is bigger than it currently thinks.`;
+  // Rule 3: strong center but missing edges — needs service-area pages.
+  if (score >= 35 && missingPct > 20) {
+    return `Add location-specific service pages, one for each town you serve but don't currently rank in. You hold the middle of the county, but there are ${missingCount} outer spots where you don't show up at all. Service pages tell Google your area is bigger than it currently thinks.`;
   }
 
-  // Rule 4: visible everywhere but rarely top 3 — reviews are usually the gap
+  // Rule 4: visible everywhere but rarely top 3 — reviews are usually the gap.
   if (top10Pct > 60 && top3Pct < 25) {
     const rivalLine = topRival
-      ? ` ${topRival.name} is winning ${topRival.steals} of those top spots. Count their reviews next to yours and the gap is usually obvious.`
-      : ` Reviews are typically how. Count your top competitor's reviews next to yours and the gap is usually obvious.`;
-    return `You're showing up almost everywhere, but you're stuck behind the top 3 results. About two-thirds of clicks go to those top spots, so the goal is closing that gap.${rivalLine}`;
+      ? ` ${topRival.name} is ranking #1 in ${topRival.steals} of those top spots, and reviews are usually how.`
+      : ` Reviews are typically how the top 3 stay in the top 3.`;
+    return `Count your top competitors' Google reviews next to yours and start closing that gap. You're showing up almost everywhere, but you're stuck behind the top 3 results where the clicks go.${rivalLine}`;
   }
 
-  // Default: audit GBP first
-  return `Your visibility score is ${score} out of 100, and the fastest first move is auditing your Google Business Profile. Every empty field, every old photo, every wrong service category is a small leak. Fix those before anything else.`;
+  // Default: audit GBP first.
+  return `Audit your Google Business Profile first. Every empty field, every old photo, every wrong service category is a small leak. At score ${score}/100 there's clear room to fix on the cheapest lever before touching anything else.`;
 }
 
 export default async function ReportPage({
@@ -130,17 +157,11 @@ export default async function ReportPage({
   const avgRank =
     found.length > 0
       ? (found.reduce((s, p) => s + (p.rank || 0), 0) / found.length).toFixed(1)
-      : "—";
+      : "-";
   const score =
     valid.length > 0
       ? Math.round(
-          valid.reduce(
-            (s, p) =>
-              p.rank === null
-                ? s
-                : s + Math.max(0, 100 - ((p.rank || 0) - 1) * 5),
-            0
-          ) / valid.length
+          valid.reduce((s, p) => s + ctrWeight(p.rank), 0) / valid.length
         )
       : 0;
 
@@ -176,13 +197,6 @@ export default async function ReportPage({
       rivals,
     });
 
-  const takeaway =
-    score >= 70
-      ? `The business dominates the core of Grayson County. Remaining opportunity lies in ${missing.length} outer points where competitors capture the call.`
-      : score >= 40
-        ? `The business appears in roughly half of local searches. ${rivals[0]?.name ?? "Competitors"} is taking the #1 spot in ${rivals[0]?.steals ?? 0} of those searches.`
-        : `The business is effectively invisible to most of Grayson County for this keyword. ${rivals[0]?.name ?? "Competitors"} and others are capturing the great majority of calls.`;
-
   const dateStr = new Date(scan.timestamp).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -211,7 +225,7 @@ export default async function ReportPage({
             </div>
             <div>
               <span>Business address</span>
-              {scan.target.address || "—"}
+              {scan.target.address || "-"}
             </div>
             <div>
               <span>Scan area</span>Grayson County, Kentucky
@@ -229,7 +243,7 @@ export default async function ReportPage({
           <div className="rp-score-block">
             <div
               className={`rp-score-num ${
-                score >= 70 ? "good" : score >= 40 ? "mid" : "bad"
+                score >= 50 ? "good" : score >= 20 ? "mid" : "bad"
               }`}
             >
               {score}
@@ -241,11 +255,13 @@ export default async function ReportPage({
             </div>
           </div>
           <blockquote className="rp-pullquote">
-            {score >= 70
-              ? "You hold strong visibility across most of Grayson County. The map shows a clear dominance pattern around your location with measurable fall-off only at the farthest edges."
-              : score >= 40
-                ? "You appear in roughly half of local searches in Grayson County. Strengthening your Google Business Profile and nearby citations would materially lift these numbers."
-                : "You are invisible to a majority of local searchers in Grayson County. Competitors capture nearly every call outside your immediate area."}
+            Out of every 100 customers searching nearby, you&rsquo;re
+            capturing about <strong>{score}</strong>.{" "}
+            {score >= 50
+              ? "You're winning most of the local race."
+              : score >= 20
+                ? `The other ${100 - score} are going to competitors.`
+                : `The other ${100 - score} are going to competitors. Most never even see you.`}
           </blockquote>
         </section>
 
@@ -286,7 +302,7 @@ export default async function ReportPage({
                 <div className={`rp-stat-val ${rankClass}`}>{avgRank}</div>
                 <div className="rp-stat-sub">
                   {isNaN(r)
-                    ? "—"
+                    ? "-"
                     : r <= 3
                       ? "top of Google pg 1"
                       : r <= 7
@@ -331,10 +347,10 @@ export default async function ReportPage({
         })()}
 
         <aside className="rp-context-note">
-          <strong>Why this matters:</strong> page 1 catches roughly{" "}
-          <strong>94% of clicks on Google</strong>, and the top 3 spots take
-          about <strong>two-thirds</strong> of those. Position is everything
-          when customers are choosing who to call.
+          <strong>Why this matters:</strong> the <strong>map pack</strong>{" "}
+          is the 3 businesses Google shows on a map at the top of local
+          searches. Those 3 spots take about{" "}
+          <strong>two-thirds of all local clicks</strong>.
         </aside>
 
         <section className="rp-map-section">
@@ -417,18 +433,6 @@ export default async function ReportPage({
           </section>
         )}
 
-        <section className="rp-takeaway-section">
-          <h3 className="rp-h3">The takeaway</h3>
-          <p className="rp-takeaway-body">{takeaway}</p>
-          <p className="rp-takeaway-body">
-            Improving local visibility requires three things working together:
-            a complete and optimized Google Business Profile, a modern
-            mobile-ready website with clear service pages, and consistent
-            citations across local directories. These signals compound. Each
-            one strengthens the others in Google&rsquo;s local ranking system.
-          </p>
-        </section>
-
         <aside className="rp-recommendation">
           <div className="rp-recommendation-tag">WHERE TO START</div>
           <p>{recommendation}</p>
@@ -440,17 +444,21 @@ export default async function ReportPage({
             <div className="rp-cta-tag">THE FIX</div>
             <h3>Studio 925 builds the websites that close these gaps.</h3>
             <p>
-              Custom-designed, mobile-first, built to rank. One flat price.
-              You own everything after final payment.
+              Local visibility is a stack: a modern website with clear
+              service pages is the foundation; the Google Business
+              Profile and directory citations compound on top of it.
+              Most owners patch the GBP and stop short of the website,
+              which is the one thing Google actually reads to decide
+              you&rsquo;re real.
             </p>
           </div>
 
           <div className="rp-cta-offers">
             <div className="rp-cta-offer">
               <div className="rp-cta-price">
-                <span>$</span>900<span className="rp-cta-per">+</span>
+                <span>$</span>900<span className="rp-cta-per"> and up</span>
               </div>
-              <div className="rp-cta-offer-label">WEBSITE BUILD</div>
+              <div className="rp-cta-offer-label">WEBSITE BUILD · 3 TIERS</div>
               <ul>
                 <li>Custom design, 48-hour first draft</li>
                 <li>Live in about a week</li>
@@ -467,7 +475,6 @@ export default async function ReportPage({
                 <li>Free custom domain + SSL</li>
                 <li>Ongoing SEO handled monthly</li>
                 <li>Denser 63-point monthly rescans</li>
-                <li>Per-point competitor breakdown</li>
                 <li>Market exclusivity in your niche</li>
               </ul>
             </div>
@@ -475,16 +482,44 @@ export default async function ReportPage({
 
           <div className="rp-cta-contact">
             <div>
-              <div className="rp-cta-contact-label">CALL OR TEXT</div>
-              <div className="rp-cta-contact-value">(270) 551-2210</div>
+              <div className="rp-cta-contact-label">CALL</div>
+              <a href="tel:+12705512210" className="rp-cta-contact-value">
+                (270) 551-2210
+              </a>
+              <a
+                href="sms:+12705512210?body=Hi%2C%20I%20just%20got%20my%20Geomap%20audit"
+                className="rp-cta-contact-sub"
+              >
+                or send a text →
+              </a>
             </div>
             <div>
               <div className="rp-cta-contact-label">EMAIL</div>
-              <div className="rp-cta-contact-value">kara@studio925.design</div>
+              <a
+                href="mailto:kara@studio925.design"
+                className="rp-cta-contact-value"
+              >
+                kara@studio925.design
+              </a>
             </div>
             <div>
               <div className="rp-cta-contact-label">ONLINE</div>
-              <div className="rp-cta-contact-value">studio925.design</div>
+              <a
+                href="https://studio925.design"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rp-cta-contact-value"
+              >
+                studio925.design
+              </a>
+              <a
+                href="https://studio925.design/#pricing"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rp-cta-contact-sub"
+              >
+                see full pricing →
+              </a>
             </div>
           </div>
         </section>

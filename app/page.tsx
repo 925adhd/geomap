@@ -250,7 +250,28 @@ export default function AuditPage() {
 
   return (
     <div className={`${playfair.variable} ${inter.variable} fl`}>
-      <main>
+      <header className="fl-site-header">
+        <div className="fl-site-header-inner">
+          <a href="https://studio925.design" className="fl-site-logo">
+            <img
+              src="/logo.webp"
+              alt="Studio 925, Custom Web Design in Kentucky"
+              width={162}
+              height={56}
+              className="fl-site-logo-img"
+            />
+            <span className="fl-site-tagline">Custom Web Design</span>
+          </a>
+          <a
+            href="https://studio925.design/#contact"
+            className="fl-site-cta"
+          >
+            Contact Kara <span aria-hidden>→</span>
+          </a>
+        </div>
+      </header>
+
+      <main className="fl-main">
         <article className="fl-doc">
           {showForm && (
             <>
@@ -273,9 +294,9 @@ export default function AuditPage() {
                   When a customer Googles &ldquo;plumber near me,&rdquo; the
                   top results change based on where they&rsquo;re standing.
                   Someone three miles north of you sees a different list
-                  than someone three miles south. You&rsquo;re losing calls
-                  in parts of town you didn&rsquo;t even know you were
-                  losing.
+                  than someone three miles south. You&rsquo;re losing
+                  customers in parts of town you didn&rsquo;t even know
+                  you were losing.
                 </p>
               </section>
 
@@ -308,8 +329,8 @@ export default function AuditPage() {
                     <div className="fl-bullet-num">03</div>
                     <h3>Real rivals</h3>
                     <p>
-                      Names of the businesses taking the calls you should
-                      be getting, neighborhood by neighborhood.
+                      Names of the businesses taking the customers you
+                      should be getting, neighborhood by neighborhood.
                     </p>
                   </div>
                 </div>
@@ -324,7 +345,7 @@ export default function AuditPage() {
                 <p>
                   Most weak spots aren&rsquo;t a sign your business is bad.
                   They mean your website isn&rsquo;t doing its job, so
-                  calls go to people who aren&rsquo;t even better than
+                  customers go to people who aren&rsquo;t even better than
                   you.
                 </p>
                 <p className="fl-why-free-lead">Studio 925 fixes that:</p>
@@ -355,7 +376,7 @@ export default function AuditPage() {
                   after launch and I keep showing up. A new service page or
                   two blog posts each month on the keywords you&rsquo;re
                   losing, plus a 63-point rescan to track progress. You run
-                  the business. I keep the phone <em>ringing</em>.
+                  the business. I keep customers <em>coming</em>.
                 </p>
                 <p className="fl-why-free-cta">
                   Get the audit first. Decide after.
@@ -505,7 +526,7 @@ export default function AuditPage() {
                 We&rsquo;ll run the 49-point scan against this Google
                 Business Profile and the keyword{" "}
                 <em>&ldquo;{keyword}&rdquo;</em>. Make sure it&rsquo;s
-                yours — your audit will be tied to this match.
+                yours, since your audit will be tied to this match.
               </p>
               <div className="au-confirm-actions">
                 <button
@@ -513,7 +534,7 @@ export default function AuditPage() {
                   className="au-submit"
                   onClick={confirmAndScan}
                 >
-                  Yes, that&rsquo;s me — start the scan →
+                  Yes, that&rsquo;s me. Start the scan →
                 </button>
                 <button
                   type="button"
@@ -530,7 +551,7 @@ export default function AuditPage() {
             <section className="au-thanks" aria-live="polite">
               <h1>
                 {status === "redirecting"
-                  ? "Map ready — opening it now…"
+                  ? "Map ready. Opening it now…"
                   : "Scanning Grayson County for you…"}
               </h1>
               <p>
@@ -552,13 +573,134 @@ export default function AuditPage() {
                 />
               </div>
               <p className="au-thanks-sub">
-                Don&rsquo;t close this tab — your report opens automatically
+                Don&rsquo;t close this tab. Your report opens automatically
                 when the scan finishes.
               </p>
             </section>
           )}
         </article>
       </main>
+
+      <footer className="fl-site-footer">
+        <div className="fl-site-footer-inner">
+          <div className="fl-site-footer-brand">
+            <img
+              src="/logo.webp"
+              alt="Studio 925, Custom Web Design in Kentucky"
+              width={162}
+              height={56}
+              loading="lazy"
+              className="fl-site-footer-logo"
+            />
+            <p className="fl-site-footer-tag">
+              Your website should work{" "}
+              <em>as hard as you&nbsp;do.</em>
+            </p>
+            <p className="fl-site-footer-loc">
+              Custom websites built right.
+              <br />
+              Web designer in Leitchfield, KY.
+            </p>
+            <a
+              href="https://www.facebook.com/studio925design"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="fl-site-footer-fb"
+              aria-label="Studio 925 on Facebook"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
+              </svg>
+              Facebook
+            </a>
+            <div className="fl-site-footer-badges">
+              <a
+                href="https://pagespeed.web.dev/analysis?url=https%3A%2F%2Fstudio925.design"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Verify Studio 925's Google PageSpeed score in a new tab"
+                className="fl-site-footer-badge-pagespeed"
+              >
+                <img
+                  src="/badge-pagespeed-99.svg"
+                  alt="90+ Google PageSpeed Performance Score"
+                  width={120}
+                  height={140}
+                  loading="lazy"
+                />
+                <span>Test it yourself →</span>
+              </a>
+              <img
+                src="/badge-stripe.svg"
+                alt="Powered by Stripe"
+                width={150}
+                height={34}
+                loading="lazy"
+                className="fl-site-footer-badge-stripe"
+              />
+            </div>
+          </div>
+
+          <div className="fl-site-footer-legal">
+            <p className="fl-site-footer-disclaimer">
+              Studio 925 builds websites designed to improve online
+              visibility and help businesses attract customers. Results
+              such as search rankings, traffic, leads, and revenue are
+              not guaranteed.{" "}
+              <a
+                href="https://studio925.design/disclaimer"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Read our full disclaimer
+              </a>
+              .
+            </p>
+            <ul className="fl-site-footer-links">
+              <li>
+                <a
+                  href="https://studio925.design/privacy-policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Privacy Policy
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://studio925.design/terms-of-service"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Terms of Service
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://studio925.design/cookie-policy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Cookie Policy
+                </a>
+              </li>
+              <li>
+                <a
+                  href="https://studio925.design/disclaimer"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Disclaimer
+                </a>
+              </li>
+            </ul>
+            <p className="fl-site-footer-copy">
+              © {new Date().getFullYear()} Studio 925 Web Design. A
+              service operated by 925 ADHD LLC. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
