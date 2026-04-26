@@ -339,14 +339,16 @@ export default function AuditPage() {
               <section className="fl-why-free">
                 <div className="fl-why-free-tag">WHY IT&rsquo;S FREE</div>
                 <p>
-                  If you like the map, fixing it is what I do. The report
-                  is yours to keep.
+                  I&rsquo;d rather show you the problem than sell you on
+                  one. If you want it fixed, that&rsquo;s what I do. If
+                  not, the map and report are yours to keep, no
+                  follow-up.
                 </p>
                 <p>
-                  Most weak spots aren&rsquo;t a sign your business is bad.
-                  They mean your website isn&rsquo;t doing its job, so
-                  customers go to people who aren&rsquo;t even better than
-                  you.
+                  Most weak spots aren&rsquo;t a sign your business is
+                  bad. They mean your website isn&rsquo;t doing its job.
+                  Customers don&rsquo;t always pick who&rsquo;s best, they
+                  pick whoever shows up first on Google.
                 </p>
                 <p className="fl-why-free-lead">Studio 925 fixes that:</p>
                 <ul className="fl-why-free-list">
