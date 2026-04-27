@@ -464,14 +464,6 @@ a.fl-upsell:hover {
   color: var(--fl-paper);
   font-weight: 700;
 }
-.fl-why-free-cta {
-  font-family: var(--fl-display);
-  font-style: italic;
-  font-size: 19px;
-  color: var(--fl-paper);
-  font-weight: 600;
-}
-
 /* --- Inline form --- */
 .au-form-inline {
   background: var(--fl-paper-tint);
@@ -602,6 +594,13 @@ a.fl-upsell:hover {
      wrapped line as one or two words. Forcing the whole "Create one
      here." onto its own row makes it scan as a proper CTA. */
   .au-fine-gbp { display: block; margin-top: 6px; }
+}
+
+.fl-mobile-only { display: none; }
+.fl-desktop-only { display: inline; }
+@media (max-width: 760px) {
+  .fl-mobile-only { display: inline; }
+  .fl-desktop-only { display: none; }
 }
 
 /* --- Scanning state (replaces old thank-you screen) --- */
@@ -781,7 +780,6 @@ a.fl-upsell:hover {
   .fl-doc h2 { font-size: 22px; }
   .fl-why-free { padding: 18px 20px; border-radius: 0 14px 14px 0; }
   .fl-why-free p { font-size: 14px; }
-  .fl-why-free-cta { font-size: 16px; }
   .au-form-inline { padding: 22px 18px 20px; border-radius: 16px; }
   .au-form-inline input,
   .au-form-inline textarea { font-size: 16px; }
@@ -805,7 +803,6 @@ a.fl-upsell:hover {
   .fl-bullet h3 { font-size: 17px; }
   .fl-bullet p { font-size: 13.5px; }
   .fl-why-free { padding: 16px 18px; }
-  .fl-why-free-cta { font-size: 15px; }
   .au-form-inline { padding: 18px 14px 16px; }
   .au-submit { padding: 12px; font-size: 14px; }
   .au-fine { font-size: 11px; }

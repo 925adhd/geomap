@@ -277,14 +277,13 @@ export default function AuditPage() {
             <>
               <section className="fl-hero">
                 <p className="fl-eyebrow">
-                  Free for Grayson County, KY · Local Geomap Audit
+                  Free ranking audit · Grayson County, KY
                 </p>
                 <h1 className="fl-hero-title">
                   Find out <em>exactly</em> where you rank on Google.
                 </h1>
                 <p className="fl-hero-sub">
-                  A free block-by-block map of how your business shows up
-                  when nearby customers search. No subscription, no catch.
+                  A block-by-block map of your service area. No catch.
                 </p>
               </section>
 
@@ -295,8 +294,7 @@ export default function AuditPage() {
                   top results change based on where they&rsquo;re standing.
                   Someone three miles north of you sees a different list
                   than someone three miles south. You&rsquo;re losing
-                  customers in parts of town you didn&rsquo;t even know
-                  you were losing.
+                  customers in parts of town you don&rsquo;t even know about.
                 </p>
               </section>
 
@@ -311,26 +309,32 @@ export default function AuditPage() {
                     <div className="fl-bullet-num">01</div>
                     <h3>A real map</h3>
                     <p>
-                      49 scan points across a 20-mile radius around your
-                      business, each showing your exact rank for the
-                      keyword customers are typing.
+                      <span className="fl-desktop-only">
+                        49 scan points across a 20-mile radius around your
+                        business, each showing your exact rank for the
+                        keyword customers are typing.
+                      </span>
+                      <span className="fl-mobile-only">
+                        Local heatmap of your business showing your rank in
+                        that exact area for the keyword customers are
+                        typing.
+                      </span>
                     </p>
                   </div>
                   <div className="fl-bullet">
                     <div className="fl-bullet-num">02</div>
                     <h3>A real number</h3>
                     <p>
-                      Visibility score from 0 to 100, average rank, top-3
-                      percentage. The same metrics paid rank trackers
-                      charge $25/month for.
+                      How many times you show up first, where you don&rsquo;t,
+                      and how many customers are picking someone else.
                     </p>
                   </div>
                   <div className="fl-bullet">
                     <div className="fl-bullet-num">03</div>
                     <h3>Real rivals</h3>
                     <p>
-                      Names of the businesses taking the customers you
-                      should be getting, neighborhood by neighborhood.
+                      The exact businesses winning your customers, block by
+                      block.
                     </p>
                   </div>
                 </div>
@@ -346,8 +350,7 @@ export default function AuditPage() {
                 <p>
                   Most weak spots aren&rsquo;t because your business is bad.
                   They mean your website isn&rsquo;t doing its job. Customers
-                  don&rsquo;t always pick the best. They pick what shows up
-                  first.
+                  pick what shows up first, not who&rsquo;s best.
                 </p>
                 <p className="fl-why-free-lead">Studio 925 fixes that.</p>
                 <ul className="fl-why-free-list">
@@ -361,8 +364,8 @@ export default function AuditPage() {
                   </li>
                 </ul>
                 <p>
-                  You own everything the day it launches. No retainers, no
-                  monthly packages, no learning curve.
+                  You own everything the day it launches. No lock-in, no
+                  monthly fees.
                 </p>
                 <p>
                   Stay on{" "}
@@ -374,22 +377,19 @@ export default function AuditPage() {
                   >
                     Full Support hosting
                   </a>{" "}
-                  after launch and I keep it moving. New service pages or
-                  blog content each month based on what you&rsquo;re missing,
-                  plus regular rescans to track progress.
+                  after launch and I add new service pages or blog content
+                  each month based on what you&rsquo;re missing, plus regular
+                  rescans to track progress.
                 </p>
                 <p>
                   You run the business. I keep customers <em>coming</em>.
-                </p>
-                <p className="fl-why-free-cta">
-                  Get the audit first. Decide after.
                 </p>
               </section>
 
               <form className="au-form-inline" onSubmit={submit} noValidate>
                 <div className="au-form-label">GET YOUR FREE AUDIT</div>
                 <p className="au-form-sub">
-                  Fill this out. Your map appears in about 30 seconds.
+                  Fill this out. See your rivals in 30 seconds.
                 </p>
 
                 <label>
