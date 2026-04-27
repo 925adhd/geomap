@@ -339,32 +339,31 @@ export default function AuditPage() {
               <section className="fl-why-free">
                 <div className="fl-why-free-tag">WHY IT&rsquo;S FREE</div>
                 <p>
-                  I&rsquo;d rather show you the problem than sell you on
-                  one. If you want it fixed, that&rsquo;s what I do. If
-                  not, the map and report are yours to keep, no
-                  follow-up.
+                  I&rsquo;d rather show you the problem than sell you one. If
+                  you want it fixed, that&rsquo;s what I do. If not, the map
+                  and report are yours.
                 </p>
                 <p>
-                  Most weak spots aren&rsquo;t a sign your business is
-                  bad. They mean your website isn&rsquo;t doing its job.
-                  Customers don&rsquo;t always pick who&rsquo;s best, they
-                  pick whoever shows up first on Google.
+                  Most weak spots aren&rsquo;t because your business is bad.
+                  They mean your website isn&rsquo;t doing its job. Customers
+                  don&rsquo;t always pick the best. They pick what shows up
+                  first.
                 </p>
-                <p className="fl-why-free-lead">Studio 925 fixes that:</p>
+                <p className="fl-why-free-lead">Studio 925 fixes that.</p>
                 <ul className="fl-why-free-list">
                   <li>
-                    Foundation site, <strong>$900</strong>, fast and
-                    Google-ready
+                    Foundation, <strong>$900</strong>. Fast, clean, and
+                    Google-ready.
                   </li>
                   <li>
-                    Growth, <strong>$1,800</strong>, adds dedicated service
-                    pages, hands-on SEO audit, and lead tracking
+                    Growth, <strong>$1,800</strong>. More pages, real SEO,
+                    and lead tracking.
                   </li>
-                  <li>
-                    <em>You own everything the day it launches</em>
-                  </li>
-                  <li>No retainers, no monthly packages, no learning curve</li>
                 </ul>
+                <p>
+                  You own everything the day it launches. No retainers, no
+                  monthly packages, no learning curve.
+                </p>
                 <p>
                   Stay on{" "}
                   <a
@@ -375,10 +374,12 @@ export default function AuditPage() {
                   >
                     Full Support hosting
                   </a>{" "}
-                  after launch and I keep showing up. A new service page or
-                  two blog posts each month on the keywords you&rsquo;re
-                  losing, plus a 63-point rescan to track progress. You run
-                  the business. I keep customers <em>coming</em>.
+                  after launch and I keep it moving. New service pages or
+                  blog content each month based on what you&rsquo;re missing,
+                  plus regular rescans to track progress.
+                </p>
+                <p>
+                  You run the business. I keep customers <em>coming</em>.
                 </p>
                 <p className="fl-why-free-cta">
                   Get the audit first. Decide after.
