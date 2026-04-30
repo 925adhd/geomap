@@ -343,15 +343,16 @@
   margin-bottom: 10px;
   text-align: center;
 }
-/* Descriptive line above the example heatmap. Italic + centered so it
-   reads as a caption, but full readability (not the small all-caps tag). */
+/* Statement above the example heatmap. Reads as a credibility claim
+   ("this is a real scan, from your hometown") rather than a caption,
+   so the styling matches: full ink, semibold, no italic. */
 .fl-mockup-intro {
-  margin: 0 0 10px;
-  font-size: 13px;
-  color: var(--fl-ink-soft);
+  margin: 0 0 12px;
+  font-size: 16px;
+  color: var(--fl-ink);
   text-align: center;
-  font-style: italic;
-  line-height: 1.5;
+  font-weight: 600;
+  line-height: 1.45;
 }
 .fl-mockup-image {
   display: block;
