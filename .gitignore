@@ -18,3 +18,7 @@ data/
 
 # Local-only project notes that we don't want public on GitHub.
 SUPABASE.md
+
+# Local backup of the original sample heatmap before cropping. Kept on
+# disk so we can re-crop, but not worth tracking in git.
+public/audit-sample-heatmap-original.webp
