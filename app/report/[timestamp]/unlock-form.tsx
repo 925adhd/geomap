@@ -51,7 +51,10 @@ export function UnlockForm({ timestamp, businessName }: Props) {
         return;
       }
       // Server-rendered page; refresh to re-fetch the now-unlocked scan
-      // and render the full report.
+      // and render the full report. Scroll to top first so the visitor
+      // sees the full report from the start, not the pricing CTA that
+      // replaced the unlock form they were sitting on.
+      window.scrollTo({ top: 0, behavior: "smooth" });
       router.refresh();
     } catch (err) {
       setError((err as Error).message || "Network error. Please try again.");
