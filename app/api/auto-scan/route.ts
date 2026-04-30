@@ -4,7 +4,6 @@ import { supabase } from "@/lib/supabase";
 import { generateGrid } from "@/lib/grid";
 import { PlacesApiError, PlacesBudgetError, searchPlaces } from "@/lib/places";
 import { costForCalls } from "@/lib/usage";
-import { checkEmail } from "@/lib/email-check";
 import type { PlaceResult, Scan, ScanPoint, TargetBusiness } from "@/lib/types";
 
 // Public auto-audit endpoint. Two-phase to avoid scanning the wrong
@@ -13,10 +12,13 @@ import type { PlaceResult, Scan, ScanPoint, TargetBusiness } from "@/lib/types";
 //   1. step:"resolve" — look up Places for that name, return the top match
 //      so the client can show a "Is this you?" confirmation card.
 //   2. step:"scan" — run the 49-point grid scan with the confirmed target,
-//      save lead+scan, return the report URL.
+//      save the scan, return the report URL.
 //
-// Lifetime per-email cap: if the email already submitted, we return the
-// existing report URL on the resolve step and skip the scan entirely.
+// The scan is intentionally lead-less. The visitor's email is collected
+// later via /api/auto-scan/unlock when they unlock the locked report
+// (see [report/[timestamp]/page.tsx]). That moves the email ask from the
+// highest-friction moment (before any value) to the highest-intent moment
+// (after they've seen a heatmap of their own town).
 
 // Vercel Pro plan: 60s function ceiling. A 49-point scan with 5-way
 // parallelism finishes in ~10s on a good day; 60s is the safety cap.
@@ -33,34 +35,25 @@ const MAX_RESULTS = 20;
 const SCAN_CONCURRENCY = 5;
 
 const MAX_BUSINESS = 200;
-const MAX_EMAIL = 254;
-const MAX_NAME = 100;
-const MAX_PHONE = 40;
 const MAX_KEYWORD = 200;
-const MAX_NOTES = 1000;
 
 const IP_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const IP_DAILY_LIMIT = 3;
+// Combined cap: counts scans + unlocks from this IP in the last 24h.
+// 2 lets a normal visitor recover from a typo or retry a different
+// keyword without opening the door to free-tier abuse.
+const IP_DAILY_LIMIT = 2;
 
 type AutoScanBody = {
   step?: "resolve" | "scan";
   businessName?: string;
-  email?: string;
-  name?: string;
-  phone?: string;
   keyword?: string;
-  notes?: string;
   honeypot?: string;
   target?: TargetBusiness;
 };
 
 type FormFields = {
   businessName: string;
-  email: string;
-  name?: string;
-  phone?: string;
   keyword: string;
-  notes?: string;
 };
 
 export function OPTIONS(req: NextRequest) {
@@ -92,16 +85,6 @@ export async function POST(req: NextRequest) {
     return jsonError(req, 400, fields.error);
   }
 
-  // Anti-abuse layer: reject disposable inboxes + dead domains, then
-  // collapse Gmail dot/plus variants to a single canonical form so the
-  // downstream lifetime-per-email dedup catches `foo+1@x` and `foo+2@x`
-  // as the same person.
-  const emailCheck = await checkEmail(fields.email);
-  if (!emailCheck.ok) {
-    return jsonError(req, 400, emailCheck.reason);
-  }
-  fields.email = emailCheck.normalized;
-
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
     req.headers.get("x-real-ip") ||
@@ -123,42 +106,13 @@ async function handleResolve(
   fields: FormFields,
   ip: string | undefined
 ) {
-  // Lifetime per-email cap. If we already have a lead for this email, send
-  // them straight to their existing report — no resolve, no scan, no cost.
-  const existing = await findExistingScanForEmail(fields.email);
-  if (existing) {
-    return NextResponse.json(
-      {
-        ok: true,
-        reportPath: `/report/${encodeURIComponent(existing.timestamp)}`,
-        deduped: true,
-      },
-      { headers: corsHeaders(req) }
-    );
-  }
-
-  // Per-IP daily limit applied to resolve too. Without this, a bot can
-  // burn the Places free tier by spamming unique-email resolve calls
-  // without ever advancing to the scan step. The check counts successful
-  // leads rows in the last 24h: a normal visitor produces one and is
-  // unaffected; an attacker who already burned 3 scans gets blocked here
-  // before triggering another Places call.
-  if (ip) {
-    const ipWindowStart = new Date(Date.now() - IP_DAILY_WINDOW_MS).toISOString();
-    const { data: ipRows } = await supabase()
-      .from("leads")
-      .select("timestamp")
-      .eq("ip", ip)
-      .gte("timestamp", ipWindowStart);
-    if (ipRows && ipRows.length >= IP_DAILY_LIMIT) {
-      console.warn("[auto-scan/resolve] IP rate limit fired:", ip);
-      return jsonError(
-        req,
-        429,
-        "This month's free audits are all used up. Email kara@studio925.design with your business name and keyword and I'll run yours within the day.",
-        "rate_limited"
-      );
-    }
+  // Per-IP daily limit applied to resolve too. Without it, a bot can burn
+  // the Places free tier by spamming resolve calls. Counts the unlocked
+  // leads rows from this IP in the last 24h: a normal visitor produces
+  // one and is unaffected.
+  if (await isIpOverLimit(ip)) {
+    console.warn("[auto-scan/resolve] IP rate limit fired:", ip);
+    return rateLimitedError(req);
   }
 
   let target: TargetBusiness;
@@ -180,7 +134,7 @@ async function handleResolve(
   }
 
   return NextResponse.json(
-    { ok: true, target, deduped: false },
+    { ok: true, target },
     { headers: corsHeaders(req) }
   );
 }
@@ -192,42 +146,12 @@ async function handleScan(
   target: TargetBusiness,
   ip: string | undefined
 ) {
-  // Re-check email dedup in case the resolve happened in another tab/session
-  // and a scan got saved in between. Cheap query, prevents duplicate scans.
-  const existing = await findExistingScanForEmail(fields.email);
-  if (existing) {
-    return NextResponse.json(
-      {
-        ok: true,
-        reportPath: `/report/${encodeURIComponent(existing.timestamp)}`,
-        deduped: true,
-      },
-      { headers: corsHeaders(req) }
-    );
-  }
-
-  // Per-IP daily limit — keyed off `leads.ip` rows in the last 24h. Defends
-  // against rotating-email bots from one network. Only applied at scan time
-  // since resolve is just one cheap Places call.
-  if (ip) {
-    const ipWindowStart = new Date(Date.now() - IP_DAILY_WINDOW_MS).toISOString();
-    const { data: ipRows } = await supabase()
-      .from("leads")
-      .select("timestamp")
-      .eq("ip", ip)
-      .gte("timestamp", ipWindowStart);
-    if (ipRows && ipRows.length >= IP_DAILY_LIMIT) {
-      // Same vague message as budget_exceeded so abusers can't infer the
-      // limit type or wait-out window. Internal logs still capture which
-      // limit fired for ops visibility.
-      console.warn("[auto-scan] IP rate limit fired:", ip);
-      return jsonError(
-        req,
-        429,
-        "This month's free audits are all used up. Email kara@studio925.design with your business name and keyword and I'll run yours within the day.",
-        "rate_limited"
-      );
-    }
+  if (await isIpOverLimit(ip)) {
+    // Same vague message as budget_exceeded so abusers can't infer the
+    // limit type or wait-out window. Internal logs still capture which
+    // limit fired for ops visibility.
+    console.warn("[auto-scan/scan] IP rate limit fired:", ip);
+    return rateLimitedError(req);
   }
 
   // Run the 49-point grid scan in batches of SCAN_CONCURRENCY. Failures on
@@ -261,17 +185,15 @@ async function handleScan(
   };
 
   // Auto-scan call accounting: 1 Pro call for the resolve + one per grid
-  // point that actually hit Google. Errors thrown inside the batch (network,
-  // HTTP, parse) all happened post-fetch, so they count. PlacesBudgetError
-  // aborts before any save happens, so we never reach here with an
-  // under-counted scan. Auto-scan never includes ratings, so the
-  // Enterprise+Atmosphere counter stays at 0.
+  // point that actually hit Google. PlacesBudgetError aborts before any
+  // save happens, so we never reach here with an under-counted scan.
   const proCalls = 1 + grid.length;
   const enterpriseAtmosphereCalls = 0;
   const estimatedCostUsd = costForCalls(proCalls, enterpriseAtmosphereCalls);
 
-  // Save scan first; if that fails the lead is useless to us (no report to
-  // link to) so we'd rather surface the error than save an orphan lead.
+  // Save the scan along with the visitor's IP. We need the IP on the scan
+  // row so the unlock step can enforce rate limits against the same daily
+  // window without requiring a second IP capture later.
   const { error: scanErr } = await supabase()
     .from("scans")
     .upsert(
@@ -281,6 +203,7 @@ async function handleScan(
         pro_calls: proCalls,
         enterprise_atmosphere_calls: enterpriseAtmosphereCalls,
         estimated_cost_usd: estimatedCostUsd,
+        ip: ip ?? null,
       },
       { onConflict: "timestamp" }
     );
@@ -289,36 +212,8 @@ async function handleScan(
     return jsonError(req, 500, "Couldn't save scan.");
   }
 
-  const { error: leadErr } = await supabase().from("leads").insert({
-    timestamp,
-    business_name: fields.businessName,
-    email: fields.email,
-    name: fields.name ?? null,
-    phone: fields.phone ?? null,
-    keyword: fields.keyword,
-    notes: fields.notes ?? null,
-    status: "scanned",
-    ip: ip ?? null,
-  });
-  if (leadErr) {
-    // Scan succeeded; lead insert failing is non-fatal for the visitor
-    // (they get their report) but we want to know about it.
-    console.error("[auto-scan/scan] lead insert failed:", leadErr);
-  }
-
-  const reportPath = `/report/${encodeURIComponent(timestamp)}`;
-  // Fire-and-forget email. Never block the response on Resend.
-  notifyOnSuccess({
-    timestamp,
-    fields,
-    reportPath,
-    req,
-  }).catch((e) =>
-    console.warn("[auto-scan/scan] notify failed:", (e as Error).message)
-  );
-
   return NextResponse.json(
-    { ok: true, reportPath, deduped: false },
+    { ok: true, reportPath: `/report/${encodeURIComponent(timestamp)}` },
     { headers: corsHeaders(req) }
   );
 }
@@ -327,42 +222,33 @@ async function handleScan(
 
 function parseAndValidate(body: AutoScanBody): FormFields | { error: string } {
   const businessName = (body.businessName || "").trim().slice(0, MAX_BUSINESS);
-  const email = (body.email || "").trim().toLowerCase().slice(0, MAX_EMAIL);
-  const name = body.name?.trim().slice(0, MAX_NAME) || undefined;
-  const phone = body.phone?.trim().slice(0, MAX_PHONE) || undefined;
   const keyword = (body.keyword || "").trim().slice(0, MAX_KEYWORD);
-  const notes = body.notes?.trim().slice(0, MAX_NOTES) || undefined;
-
-  if (!businessName || !email || !keyword) {
-    return { error: "Business name, email, and keyword are required." };
+  if (!businessName || !keyword) {
+    return { error: "Business name and keyword are required." };
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { error: "Invalid email." };
-  }
-  return { businessName, email, name, phone, keyword, notes };
+  return { businessName, keyword };
 }
 
-async function findExistingScanForEmail(
-  email: string
-): Promise<{ timestamp: string } | null> {
-  const { data } = await supabase()
-    .from("leads")
-    .select("timestamp")
-    .eq("email", email)
-    .order("timestamp", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!data) return null;
-  // Confirm a scan row actually exists for this lead. If the lead got
-  // saved without its scan (rare — see save order in handleScan), we want
-  // to re-run rather than send them to a 404.
-  const { data: scanRow } = await supabase()
-    .from("scans")
-    .select("timestamp")
-    .eq("timestamp", data.timestamp)
-    .maybeSingle();
-  if (!scanRow) return null;
-  return { timestamp: data.timestamp };
+async function isIpOverLimit(ip: string | undefined): Promise<boolean> {
+  if (!ip) return false;
+  const ipWindowStart = new Date(Date.now() - IP_DAILY_WINDOW_MS).toISOString();
+  // Count both lead rows (unlocks) AND scan rows from this IP, since
+  // scans now happen without a lead. A single visitor running 3 scans
+  // and never unlocking should still hit the cap.
+  const [{ data: leadRows }, { data: scanRows }] = await Promise.all([
+    supabase()
+      .from("leads")
+      .select("timestamp")
+      .eq("ip", ip)
+      .gte("timestamp", ipWindowStart),
+    supabase()
+      .from("scans")
+      .select("timestamp")
+      .eq("ip", ip)
+      .gte("timestamp", ipWindowStart),
+  ]);
+  const total = (leadRows?.length ?? 0) + (scanRows?.length ?? 0);
+  return total >= IP_DAILY_LIMIT;
 }
 
 async function resolveBusiness(businessName: string): Promise<TargetBusiness> {
@@ -438,60 +324,6 @@ function findRank(places: PlaceResult[], targetPlaceId: string): number | null {
   return null;
 }
 
-async function notifyOnSuccess(args: {
-  timestamp: string;
-  fields: FormFields;
-  reportPath: string;
-  req: NextRequest;
-}) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.LEADS_NOTIFY_EMAIL;
-  const from = process.env.LEADS_FROM_EMAIL;
-  if (!apiKey || !to || !from) return;
-
-  const { fields } = args;
-  const origin =
-    args.req.headers.get("origin") ||
-    `https://${args.req.headers.get("host") || ""}`;
-  const reportUrl = `${origin}${args.reportPath}`;
-  const subject = `New auto-audit completed — ${fields.businessName}`;
-  const html = `
-    <div style="font-family:system-ui,sans-serif;line-height:1.5;color:#14161a">
-      <h2 style="margin:0 0 12px">New audit ran automatically</h2>
-      <p style="margin:0 0 18px;color:#6a655a">${new Date(args.timestamp).toLocaleString()}</p>
-      <table style="border-collapse:collapse;font-size:14px">
-        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Business</td><td style="padding:4px 0"><strong>${escapeHtml(fields.businessName)}</strong></td></tr>
-        ${fields.name ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Name</td><td style="padding:4px 0">${escapeHtml(fields.name)}</td></tr>` : ""}
-        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Email</td><td style="padding:4px 0"><a href="mailto:${encodeURIComponent(fields.email)}">${escapeHtml(fields.email)}</a></td></tr>
-        ${fields.phone ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Phone</td><td style="padding:4px 0">${escapeHtml(fields.phone)}</td></tr>` : ""}
-        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Keyword</td><td style="padding:4px 0">${escapeHtml(fields.keyword)}</td></tr>
-        ${fields.notes ? `<tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Notes</td><td style="padding:4px 0;white-space:pre-wrap">${escapeHtml(fields.notes)}</td></tr>` : ""}
-        <tr><td style="padding:4px 14px 4px 0;color:#6a655a;vertical-align:top">Report</td><td style="padding:4px 0"><a href="${reportUrl}">${reportUrl}</a></td></tr>
-      </table>
-    </div>
-  `;
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      reply_to: fields.email,
-      subject,
-      html,
-    }),
-  });
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!
-  );
-}
-
 function jsonError(
   req: NextRequest,
   status: number,
@@ -501,6 +333,19 @@ function jsonError(
   return NextResponse.json(
     { error: message, ...(code ? { code } : {}) },
     { status, headers: corsHeaders(req) }
+  );
+}
+
+function rateLimitedError(req: NextRequest) {
+  // Per-IP daily cap fired. Distinct from the monthly budget cap — this
+  // visitor specifically has already used their daily allowance, so the
+  // honest message ("today's audits, try tomorrow") gives them a real
+  // path forward instead of implying the whole tool is sold out.
+  return jsonError(
+    req,
+    429,
+    "You've already used today's free audits. Try again tomorrow, or email kara@studio925.design and I'll run yours sooner.",
+    "rate_limited"
   );
 }
 

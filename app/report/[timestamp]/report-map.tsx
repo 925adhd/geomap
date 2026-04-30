@@ -12,6 +12,10 @@ type Props = {
     location?: { latitude: number; longitude: number } | null;
   };
   bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+  /** Locked state suppresses everything that exposes rival names: tooltip on
+   *  hover, click-to-detail card. The rank pin numbers themselves stay
+   *  visible — that's the teaser. */
+  locked?: boolean;
 };
 
 function pinColor(p: ScanPoint): string {
@@ -67,7 +71,7 @@ function esc(s: string): string {
   );
 }
 
-export function ReportMap({ points, target, bounds }: Props) {
+export function ReportMap({ points, target, bounds, locked = false }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletNS.Map | null>(null);
   const [selected, setSelected] = useState<ScanPoint | null>(null);
@@ -123,21 +127,24 @@ export function ReportMap({ points, target, bounds }: Props) {
             iconSize: [30, 30],
             iconAnchor: [15, 15],
           }),
-          // interactive=true so the tooltip fires on hover. The map itself
-          // stays locked (no drag/zoom) — only the pins respond.
-          interactive: true,
+          // Non-interactive in locked mode so hover/click reveal nothing.
+          // In unlocked mode pins stay interactive for the tooltip + click
+          // detail card. The map itself is always drag/zoom locked.
+          interactive: !locked,
         }).addTo(map);
-        // In-map tooltip — fine on desktop hover. Hidden via CSS on
-        // mobile because the leaflet-container clips at the map edges,
-        // so edge pins lose half the tooltip. Mobile users get the
-        // detail card below the map instead (driven by marker click).
-        marker.bindTooltip(buildTooltip(p, target.name), {
-          direction: "auto",
-          offset: [0, -8],
-          className: "rp-pin-tooltip no-print",
-          opacity: 1,
-        });
-        marker.on("click", () => setSelected(p));
+        if (!locked) {
+          // In-map tooltip — fine on desktop hover. Hidden via CSS on
+          // mobile because the leaflet-container clips at the map edges,
+          // so edge pins lose half the tooltip. Mobile users get the
+          // detail card below the map instead (driven by marker click).
+          marker.bindTooltip(buildTooltip(p, target.name), {
+            direction: "auto",
+            offset: [0, -8],
+            className: "rp-pin-tooltip no-print",
+            opacity: 1,
+          });
+          marker.on("click", () => setSelected(p));
+        }
       }
 
       if (target.location) {
@@ -158,7 +165,7 @@ export function ReportMap({ points, target, bounds }: Props) {
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [points, target, bounds]);
+  }, [points, target, bounds, locked]);
 
   // Compute the aspect ratio of the actual map bounds (with longitude
   // shrunk by cos(lat) so it matches projected meters, not raw degrees).
@@ -174,12 +181,29 @@ export function ReportMap({ points, target, bounds }: Props) {
 
   return (
     <>
-      <div
-        ref={el}
-        className="rp-realmap"
-        style={{ aspectRatio: `${aspect.toFixed(3)}` }}
-      />
-      <PinDetail point={selected} targetName={target.name} />
+      <div className="rp-realmap-wrap">
+        <div
+          ref={el}
+          className="rp-realmap"
+          style={{ aspectRatio: `${aspect.toFixed(3)}` }}
+        />
+        {/* Brand watermark inside the map container. Survives screenshot
+            crops of just the heatmap, which is the most-shared part of
+            the report. Top-right so it doesn't fight Leaflet's bottom-right
+            OSM attribution. */}
+        <a
+          href="https://studio925.design"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rp-map-brand"
+          aria-label="Local Geomap by Studio 925"
+        >
+          <span className="rp-map-brand-tool">Local Geomap</span>
+          <span className="rp-map-brand-dot" aria-hidden>·</span>
+          <span className="rp-map-brand-domain">studio925.design</span>
+        </a>
+      </div>
+      {!locked && <PinDetail point={selected} targetName={target.name} />}
     </>
   );
 }

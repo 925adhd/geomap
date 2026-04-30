@@ -7,6 +7,7 @@ import graysonGeometry from "@/lib/grayson-geometry.json";
 import { supabasePublic } from "@/lib/supabase";
 import { PrintButton } from "./print-button";
 import { ReportMap } from "./report-map";
+import { UnlockForm } from "./unlock-form";
 
 // Reports are reachable by timestamp alone — anyone with the URL can
 // read them. Keep them out of search engines so a customer's audit
@@ -54,17 +55,22 @@ const plex = IBM_Plex_Sans({
   display: "swap",
 });
 
-async function getScan(timestamp: string): Promise<Scan | null> {
+type ScanRow = {
+  payload: Scan;
+  unlocked_at: string | null;
+};
+
+async function getScan(timestamp: string): Promise<ScanRow | null> {
   // Use the anon-key client here, not service_role. RLS on `scans`
   // grants public SELECT, so this still works; but the credential's
   // blast radius is one read-only table instead of the whole project.
   const { data, error } = await supabasePublic()
     .from("scans")
-    .select("payload")
+    .select("payload, unlocked_at")
     .eq("timestamp", timestamp)
     .maybeSingle();
   if (error || !data) return null;
-  return (data as { payload: Scan }).payload;
+  return data as ScanRow;
 }
 
 // CTR weights for ranks 1–10. Normalized so rank-1 = 100. The curve is
@@ -146,8 +152,12 @@ export default async function ReportPage({
   params: Promise<{ timestamp: string }>;
 }) {
   const { timestamp } = await params;
-  const scan = await getScan(decodeURIComponent(timestamp));
-  if (!scan) notFound();
+  const decodedTimestamp = decodeURIComponent(timestamp);
+  const row = await getScan(decodedTimestamp);
+  if (!row) notFound();
+
+  const scan = row.payload;
+  const locked = !row.unlocked_at;
 
   const valid = scan.points.filter((p) => !p.error);
   const found = valid.filter((p) => p.rank !== null);
@@ -203,11 +213,329 @@ export default async function ReportPage({
     day: "numeric",
   });
 
-  return (
-    <div className={`${fraunces.variable} ${plex.variable} rp`}>
-      <div className="rp-toolbar no-print">
-        <PrintButton />
+  const r = parseFloat(avgRank);
+  const rankClass = isNaN(r)
+    ? ""
+    : r <= 3
+      ? "rp-stat-good"
+      : r <= 7
+        ? "rp-stat-mid"
+        : "rp-stat-bad";
+  const top3Pct = (top3.length / valid.length) * 100;
+  const top3Class =
+    top3Pct >= 50
+      ? "rp-stat-good"
+      : top3Pct >= 25
+        ? "rp-stat-mid"
+        : "rp-stat-bad";
+  const top10Pct = (top10.length / valid.length) * 100;
+  const top10Class =
+    top10Pct >= 75
+      ? "rp-stat-good"
+      : top10Pct >= 40
+        ? "rp-stat-mid"
+        : "rp-stat-bad";
+  const missPct = (missing.length / valid.length) * 100;
+  const missClass =
+    missPct <= 10
+      ? "rp-stat-good"
+      : missPct <= 25
+        ? "rp-stat-mid"
+        : "rp-stat-bad";
+
+  // Sections extracted as JSX so the locked vs unlocked layouts can
+  // reorder them without duplicating markup. Locked moves the heatmap
+  // to the top (visual wow first), keeps score/stats/context-note sharp
+  // (the pain), and consolidates rivals + recommendation into one
+  // blurred preview block followed by the unlock form.
+  const summarySection = (
+    <section className="rp-summary" key="summary">
+      <div className="rp-score-block">
+        <div
+          className={`rp-score-num ${
+            score >= 50 ? "good" : score >= 20 ? "mid" : "bad"
+          }`}
+        >
+          {score}
+        </div>
+        <div className="rp-score-unit">
+          <span>VISIBILITY</span>
+          <span>SCORE</span>
+          <small>out of 100</small>
+        </div>
       </div>
+      <blockquote className="rp-pullquote">
+        Out of every 100 customers searching nearby, you&rsquo;re
+        capturing about <strong>{score}</strong>.{" "}
+        {score >= 50
+          ? "You're winning most of the local race."
+          : score >= 20
+            ? `The other ${100 - score} are going to competitors.`
+            : `The other ${100 - score} are going to competitors. Most never even see you.`}
+      </blockquote>
+    </section>
+  );
+
+  const statsSection = (
+    <section className="rp-stats" key="stats">
+      <div className="rp-stat">
+        <div className="rp-stat-label">AVG RANK</div>
+        <div className={`rp-stat-val ${rankClass}`}>{avgRank}</div>
+        <div className="rp-stat-sub">
+          {isNaN(r)
+            ? "-"
+            : r <= 3
+              ? "top of Google pg 1"
+              : r <= 7
+                ? "mid Google pg 1"
+                : r <= 10
+                  ? "bottom Google pg 1"
+                  : r <= 15
+                    ? "top Google pg 2"
+                    : "deep Google pg 2+"}
+        </div>
+      </div>
+      <div className="rp-stat">
+        <div className="rp-stat-label">TOP 3</div>
+        <div className={`rp-stat-val ${top3Class}`}>
+          {top3.length}
+          <span>/{valid.length}</span>
+        </div>
+        <div className="rp-stat-sub">
+          {Math.round(top3Pct)}% of points
+        </div>
+      </div>
+      <div className="rp-stat">
+        <div className="rp-stat-label">TOP 10</div>
+        <div className={`rp-stat-val ${top10Class}`}>
+          {top10.length}
+          <span>/{valid.length}</span>
+        </div>
+        <div className="rp-stat-sub">
+          {Math.round(top10Pct)}% of points
+        </div>
+      </div>
+      <div className="rp-stat">
+        <div className="rp-stat-label">NOT FOUND</div>
+        <div className={`rp-stat-val ${missClass}`}>
+          {missing.length}
+          <span>/{valid.length}</span>
+        </div>
+        <div className="rp-stat-sub">fully invisible</div>
+      </div>
+    </section>
+  );
+
+  const contextNote = (
+    <aside className="rp-context-note" key="context">
+      <strong>Why this matters:</strong> the <strong>map pack</strong>{" "}
+      is the 3 businesses Google shows on a map at the top of local
+      searches. Those 3 spots take about{" "}
+      <strong>two-thirds of all local clicks</strong>.
+    </aside>
+  );
+
+  const mapSection = (
+    <section className="rp-map-section" key="map">
+      <h3 className="rp-h3">Geographic visibility</h3>
+      <p className="rp-caption">
+        Each point represents a &ldquo;{scan.keyword}&rdquo; search from
+        that exact GPS location. The number inside each pin is the
+        business&rsquo;s rank in Google&rsquo;s results from that point.{" "}
+        {locked ? (
+          <strong className="rp-caption-hint">
+            Each pin holds the top 3 businesses ranking there. Unlock
+            below to see who&rsquo;s beating you, spot by spot.
+          </strong>
+        ) : (
+          <strong className="rp-caption-hint">
+            Hover any pin (or tap on mobile) to see who&rsquo;s ranking
+            #1, #2, and #3 at that spot.
+          </strong>
+        )}
+      </p>
+      <ReportMap
+        points={scan.points}
+        target={scan.target}
+        bounds={mapBounds}
+        locked={locked}
+      />
+      <div className="rp-map-legend">
+        <span>
+          <svg
+            className="rp-legend-crosshair"
+            viewBox="0 0 20 20"
+            width="18"
+            height="18"
+            aria-hidden
+          >
+            <circle
+              cx="10"
+              cy="10"
+              r="6"
+              fill="none"
+              stroke="#1e3a5f"
+              strokeWidth="1.8"
+            />
+            <line x1="0" y1="10" x2="3" y2="10" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
+            <line x1="17" y1="10" x2="20" y2="10" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
+            <line x1="10" y1="0" x2="10" y2="3" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
+            <line x1="10" y1="17" x2="10" y2="20" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
+          </svg>
+          {scan.target.name}
+        </span>
+        <span>
+          <i style={{ background: "#1a5d2f" }} /> Top 3
+        </span>
+        <span>
+          <i style={{ background: "#d4a017" }} /> 4–10
+        </span>
+        <span>
+          <i style={{ background: "#c96a12" }} /> 11–20
+        </span>
+        <span>
+          <i style={{ background: "#9a0f0f" }} /> Not found
+        </span>
+      </div>
+    </section>
+  );
+
+  const rivalsSection =
+    rivals.length > 0 ? (
+      <section className="rp-rivals-section" key="rivals">
+        <h3 className="rp-h3">Top competitors capturing #1</h3>
+        <p className="rp-caption">
+          Businesses that ranked first in the most scan points where you
+          were not #1.
+        </p>
+        <ul className="rp-rivals">
+          {rivals.map((rv, i) => (
+            <li key={rv.name}>
+              <span className="rp-rival-rank">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <span className="rp-rival-name">{rv.name}</span>
+              <span className="rp-rival-bar-wrap">
+                <span
+                  className="rp-rival-bar"
+                  style={{ width: `${(rv.steals / maxSteals) * 100}%` }}
+                />
+              </span>
+              <span className="rp-rival-count">
+                {rv.steals} {rv.steals === 1 ? "capture" : "captures"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
+
+  const recommendationSection = (
+    <aside className="rp-recommendation" key="recommendation">
+      <div className="rp-recommendation-tag">WHERE TO START</div>
+      <p>{recommendation}</p>
+      <div className="rp-recommendation-sig">Kara · Studio 925</div>
+    </aside>
+  );
+
+  const ctaSection = (
+    <section className="rp-cta" key="cta">
+      <div className="rp-cta-header">
+        <div className="rp-cta-tag">THE FIX</div>
+        <h3>Studio 925 builds the websites that close these gaps.</h3>
+        <p>
+          Local visibility is a stack: a modern website with clear
+          service pages is the foundation; the Google Business
+          Profile and directory citations compound on top of it.
+          Most owners patch the GBP and stop short of the website,
+          which is the one thing Google actually reads to decide
+          you&rsquo;re real.
+        </p>
+      </div>
+
+      <div className="rp-cta-offers">
+        <div className="rp-cta-offer">
+          <div className="rp-cta-price">
+            <span>$</span>900<span className="rp-cta-per"> and up</span>
+          </div>
+          <div className="rp-cta-offer-label">WEBSITE BUILD · 3 TIERS</div>
+          <ul>
+            <li>Custom design, 48-hour first draft</li>
+            <li>Live in about a week</li>
+            <li>Google-ready SEO from day one</li>
+            <li>You own everything after final payment</li>
+          </ul>
+        </div>
+        <div className="rp-cta-offer rp-cta-feature">
+          <div className="rp-cta-price">
+            <span>$</span>49<span className="rp-cta-per">/mo</span>
+          </div>
+          <div className="rp-cta-offer-label">FULL SUPPORT HOSTING</div>
+          <ul>
+            <li>Free custom domain + SSL</li>
+            <li>Ongoing SEO handled monthly</li>
+            <li>Denser 63-point monthly rescans</li>
+            <li>Market exclusivity in your niche</li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="rp-cta-contact">
+        <div>
+          <div className="rp-cta-contact-label">CALL</div>
+          <a href="tel:+12705512210" className="rp-cta-contact-value">
+            (270) 551-2210
+          </a>
+          <a
+            href="sms:+12705512210?body=Hi%2C%20I%20just%20got%20my%20Geomap%20audit"
+            className="rp-cta-contact-sub"
+          >
+            or send a text →
+          </a>
+        </div>
+        <div>
+          <div className="rp-cta-contact-label">EMAIL</div>
+          <a
+            href="mailto:kara@studio925.design"
+            className="rp-cta-contact-value"
+          >
+            kara@studio925.design
+          </a>
+        </div>
+        <div>
+          <div className="rp-cta-contact-label">ONLINE</div>
+          <a
+            href="https://studio925.design"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rp-cta-contact-value"
+          >
+            studio925.design
+          </a>
+          <a
+            href="https://studio925.design/#pricing"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rp-cta-contact-sub"
+          >
+            see full pricing →
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+
+  return (
+    <div
+      className={`${fraunces.variable} ${plex.variable} rp${
+        locked ? " rp--locked" : ""
+      }`}
+    >
+      {!locked && (
+        <div className="rp-toolbar no-print">
+          <PrintButton />
+        </div>
+      )}
 
       <article className="rp-doc">
         <header className="rp-head">
@@ -225,7 +553,11 @@ export default async function ReportPage({
             </div>
             <div>
               <span>Business address</span>
-              {scan.target.address || "-"}
+              {scan.target.address || (
+                <em className="rp-subject-meta-empty">
+                  No physical address
+                </em>
+              )}
             </div>
             <div>
               <span>Scan area</span>Grayson County, Kentucky
@@ -239,295 +571,38 @@ export default async function ReportPage({
           </div>
         </section>
 
-        <section className="rp-summary">
-          <div className="rp-score-block">
+        {locked ? (
+          <>
+            {mapSection}
+            {summarySection}
+            {statsSection}
+            {contextNote}
             <div
-              className={`rp-score-num ${
-                score >= 50 ? "good" : score >= 20 ? "mid" : "bad"
-              }`}
+              className="rp-locked-blur rp-locked-preview"
+              aria-hidden="true"
             >
-              {score}
+              {rivalsSection}
+              {recommendationSection}
             </div>
-            <div className="rp-score-unit">
-              <span>VISIBILITY</span>
-              <span>SCORE</span>
-              <small>out of 100</small>
-            </div>
-          </div>
-          <blockquote className="rp-pullquote">
-            Out of every 100 customers searching nearby, you&rsquo;re
-            capturing about <strong>{score}</strong>.{" "}
-            {score >= 50
-              ? "You're winning most of the local race."
-              : score >= 20
-                ? `The other ${100 - score} are going to competitors.`
-                : `The other ${100 - score} are going to competitors. Most never even see you.`}
-          </blockquote>
-        </section>
-
-        {(() => {
-          const r = parseFloat(avgRank);
-          const rankClass = isNaN(r)
-            ? ""
-            : r <= 3
-              ? "rp-stat-good"
-              : r <= 7
-                ? "rp-stat-mid"
-                : "rp-stat-bad";
-          const top3Pct = (top3.length / valid.length) * 100;
-          const top3Class =
-            top3Pct >= 50
-              ? "rp-stat-good"
-              : top3Pct >= 25
-                ? "rp-stat-mid"
-                : "rp-stat-bad";
-          const top10Pct = (top10.length / valid.length) * 100;
-          const top10Class =
-            top10Pct >= 75
-              ? "rp-stat-good"
-              : top10Pct >= 40
-                ? "rp-stat-mid"
-                : "rp-stat-bad";
-          const missPct = (missing.length / valid.length) * 100;
-          const missClass =
-            missPct <= 10
-              ? "rp-stat-good"
-              : missPct <= 25
-                ? "rp-stat-mid"
-                : "rp-stat-bad";
-          return (
-            <section className="rp-stats">
-              <div className="rp-stat">
-                <div className="rp-stat-label">AVG RANK</div>
-                <div className={`rp-stat-val ${rankClass}`}>{avgRank}</div>
-                <div className="rp-stat-sub">
-                  {isNaN(r)
-                    ? "-"
-                    : r <= 3
-                      ? "top of Google pg 1"
-                      : r <= 7
-                        ? "mid Google pg 1"
-                        : r <= 10
-                          ? "bottom Google pg 1"
-                          : r <= 15
-                            ? "top Google pg 2"
-                            : "deep Google pg 2+"}
-                </div>
-              </div>
-              <div className="rp-stat">
-                <div className="rp-stat-label">TOP 3</div>
-                <div className={`rp-stat-val ${top3Class}`}>
-                  {top3.length}
-                  <span>/{valid.length}</span>
-                </div>
-                <div className="rp-stat-sub">
-                  {Math.round(top3Pct)}% of points
-                </div>
-              </div>
-              <div className="rp-stat">
-                <div className="rp-stat-label">TOP 10</div>
-                <div className={`rp-stat-val ${top10Class}`}>
-                  {top10.length}
-                  <span>/{valid.length}</span>
-                </div>
-                <div className="rp-stat-sub">
-                  {Math.round(top10Pct)}% of points
-                </div>
-              </div>
-              <div className="rp-stat">
-                <div className="rp-stat-label">NOT FOUND</div>
-                <div className={`rp-stat-val ${missClass}`}>
-                  {missing.length}
-                  <span>/{valid.length}</span>
-                </div>
-                <div className="rp-stat-sub">fully invisible</div>
-              </div>
-            </section>
-          );
-        })()}
-
-        <aside className="rp-context-note">
-          <strong>Why this matters:</strong> the <strong>map pack</strong>{" "}
-          is the 3 businesses Google shows on a map at the top of local
-          searches. Those 3 spots take about{" "}
-          <strong>two-thirds of all local clicks</strong>.
-        </aside>
-
-        <section className="rp-map-section">
-          <h3 className="rp-h3">Geographic visibility</h3>
-          <p className="rp-caption">
-            Each point represents a &ldquo;{scan.keyword}&rdquo; search from
-            that exact GPS location. The number inside each pin is the
-            business&rsquo;s rank in Google&rsquo;s results from that point.
-          </p>
-          <ReportMap
-            points={scan.points}
-            target={scan.target}
-            bounds={mapBounds}
-          />
-          <div className="rp-map-legend">
-            <span>
-              <svg
-                className="rp-legend-crosshair"
-                viewBox="0 0 20 20"
-                width="18"
-                height="18"
-                aria-hidden
-              >
-                <circle
-                  cx="10"
-                  cy="10"
-                  r="6"
-                  fill="none"
-                  stroke="#1e3a5f"
-                  strokeWidth="1.8"
-                />
-                <line x1="0" y1="10" x2="3" y2="10" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
-                <line x1="17" y1="10" x2="20" y2="10" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
-                <line x1="10" y1="0" x2="10" y2="3" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
-                <line x1="10" y1="17" x2="10" y2="20" stroke="#1e3a5f" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-              {scan.target.name}
-            </span>
-            <span>
-              <i style={{ background: "#1a5d2f" }} /> Top 3
-            </span>
-            <span>
-              <i style={{ background: "#d4a017" }} /> 4–10
-            </span>
-            <span>
-              <i style={{ background: "#c96a12" }} /> 11–20
-            </span>
-            <span>
-              <i style={{ background: "#9a0f0f" }} /> Not found
-            </span>
-          </div>
-        </section>
-
-        {rivals.length > 0 && (
-          <section className="rp-rivals-section">
-            <h3 className="rp-h3">Top competitors capturing #1</h3>
-            <p className="rp-caption">
-              Businesses that ranked first in the most scan points where you
-              were not #1.
-            </p>
-            <ul className="rp-rivals">
-              {rivals.map((r, i) => (
-                <li key={r.name}>
-                  <span className="rp-rival-rank">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span className="rp-rival-name">{r.name}</span>
-                  <span className="rp-rival-bar-wrap">
-                    <span
-                      className="rp-rival-bar"
-                      style={{ width: `${(r.steals / maxSteals) * 100}%` }}
-                    />
-                  </span>
-                  <span className="rp-rival-count">
-                    {r.steals} {r.steals === 1 ? "capture" : "captures"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
+            <UnlockForm
+              timestamp={decodedTimestamp}
+              businessName={scan.target.name}
+            />
+          </>
+        ) : (
+          <>
+            {summarySection}
+            {statsSection}
+            {contextNote}
+            {mapSection}
+            {rivalsSection}
+            {recommendationSection}
+            {ctaSection}
+          </>
         )}
 
-        <aside className="rp-recommendation">
-          <div className="rp-recommendation-tag">WHERE TO START</div>
-          <p>{recommendation}</p>
-          <div className="rp-recommendation-sig">Kara · Studio 925</div>
-        </aside>
-
-        <section className="rp-cta">
-          <div className="rp-cta-header">
-            <div className="rp-cta-tag">THE FIX</div>
-            <h3>Studio 925 builds the websites that close these gaps.</h3>
-            <p>
-              Local visibility is a stack: a modern website with clear
-              service pages is the foundation; the Google Business
-              Profile and directory citations compound on top of it.
-              Most owners patch the GBP and stop short of the website,
-              which is the one thing Google actually reads to decide
-              you&rsquo;re real.
-            </p>
-          </div>
-
-          <div className="rp-cta-offers">
-            <div className="rp-cta-offer">
-              <div className="rp-cta-price">
-                <span>$</span>900<span className="rp-cta-per"> and up</span>
-              </div>
-              <div className="rp-cta-offer-label">WEBSITE BUILD · 3 TIERS</div>
-              <ul>
-                <li>Custom design, 48-hour first draft</li>
-                <li>Live in about a week</li>
-                <li>Google-ready SEO from day one</li>
-                <li>You own everything after final payment</li>
-              </ul>
-            </div>
-            <div className="rp-cta-offer rp-cta-feature">
-              <div className="rp-cta-price">
-                <span>$</span>49<span className="rp-cta-per">/mo</span>
-              </div>
-              <div className="rp-cta-offer-label">FULL SUPPORT HOSTING</div>
-              <ul>
-                <li>Free custom domain + SSL</li>
-                <li>Ongoing SEO handled monthly</li>
-                <li>Denser 63-point monthly rescans</li>
-                <li>Market exclusivity in your niche</li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="rp-cta-contact">
-            <div>
-              <div className="rp-cta-contact-label">CALL</div>
-              <a href="tel:+12705512210" className="rp-cta-contact-value">
-                (270) 551-2210
-              </a>
-              <a
-                href="sms:+12705512210?body=Hi%2C%20I%20just%20got%20my%20Geomap%20audit"
-                className="rp-cta-contact-sub"
-              >
-                or send a text →
-              </a>
-            </div>
-            <div>
-              <div className="rp-cta-contact-label">EMAIL</div>
-              <a
-                href="mailto:kara@studio925.design"
-                className="rp-cta-contact-value"
-              >
-                kara@studio925.design
-              </a>
-            </div>
-            <div>
-              <div className="rp-cta-contact-label">ONLINE</div>
-              <a
-                href="https://studio925.design"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rp-cta-contact-value"
-              >
-                studio925.design
-              </a>
-              <a
-                href="https://studio925.design/#pricing"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="rp-cta-contact-sub"
-              >
-                see full pricing →
-              </a>
-            </div>
-          </div>
-        </section>
-
         <footer className="rp-foot">
-          <div>
-            Powered by Google · Generated {dateStr}
-          </div>
+          <div>Powered by Google · Generated {dateStr}</div>
           <div>LOCAL GEOMAP · BY STUDIO 925</div>
         </footer>
       </article>

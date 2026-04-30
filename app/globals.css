@@ -1788,6 +1788,264 @@ a.rp-cta-contact-value:hover { color: var(--rp-mustard); }
   font-weight: 600;
 }
 
+/* --- Map brand watermark ---
+   Absolute-positioned over the heatmap so it survives any screenshot
+   crop of just the map area (the most-shared part of the report).
+   Top-right so it doesn't fight Leaflet's bottom-right OSM attribution. */
+.rp-realmap-wrap {
+  position: relative;
+}
+.rp-map-brand {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: rgba(250, 249, 245, 0.92);
+  border: 1px solid var(--rp-rule);
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  color: var(--rp-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  z-index: 500;
+  pointer-events: auto;
+  transition: background 0.12s ease;
+}
+.rp-map-brand:hover {
+  background: rgba(250, 249, 245, 1);
+}
+.rp-map-brand-tool {
+  font-family: var(--rp-display), serif;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-size: 12.5px;
+  font-variation-settings: "SOFT" 30;
+}
+.rp-map-brand-dot {
+  color: var(--rp-mustard);
+  font-weight: 700;
+}
+.rp-map-brand-domain {
+  color: var(--rp-blue);
+  letter-spacing: 0.02em;
+}
+
+/* --- Locked report email gate ---
+   Same dark-ink + mustard accent palette as .rp-cta so the unlock block
+   feels like the document's main CTA when the rest of the report is
+   blurred out. */
+.rp-unlock {
+  margin: 36px 0 0;
+  padding: 32px 36px 28px;
+  background: var(--rp-ink);
+  color: var(--rp-paper);
+  border-left: 5px solid var(--rp-mustard);
+}
+.rp-unlock-tag {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: var(--rp-mustard);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.rp-unlock-headline {
+  font-family: var(--rp-display), serif;
+  font-size: 28px;
+  line-height: 1.15;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  color: var(--rp-paper);
+  margin: 0 0 12px;
+  font-variation-settings: "SOFT" 40;
+  max-width: 560px;
+}
+.rp-unlock-headline em {
+  font-style: italic;
+  color: var(--rp-mustard);
+}
+.rp-unlock-sub {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #c9c3b1;
+  margin: 0 0 22px;
+  max-width: 580px;
+}
+.rp-unlock-fields {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.rp-unlock-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #a8a394;
+  font-weight: 700;
+}
+.rp-unlock-label > span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.rp-unlock-opt {
+  font-style: italic;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 400;
+  font-size: 11px;
+  color: #8b8578;
+}
+.rp-unlock-label input {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 12px 14px;
+  background: #20242b;
+  color: var(--rp-paper);
+  border: 1px solid #3a342b;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+.rp-unlock-label input::placeholder {
+  color: #6b6457;
+}
+.rp-unlock-label input:focus {
+  border-color: var(--rp-mustard);
+}
+.rp-unlock-label input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.rp-unlock-submit {
+  display: inline-block;
+  width: 100%;
+  padding: 14px 22px;
+  background: var(--rp-mustard);
+  color: var(--rp-ink);
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.rp-unlock-submit:hover:not(:disabled) {
+  background: #d49a2a;
+}
+.rp-unlock-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.rp-unlock-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(154, 15, 15, 0.18);
+  border-left: 3px solid #c44;
+  color: #f4d4d4;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.rp-unlock-fine {
+  margin: 16px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #8b8578;
+}
+
+/* Blurred sections in the locked report. Real content renders, but
+   pointer events and selection are off and the pixels are blurred so
+   names/numbers are unreadable. UX gate, not a security gate — a
+   determined visitor with devtools can disable the filter. Acceptable
+   trade for the "show what you're unlocking" effect, since anyone
+   bypassing is not a real lead.
+
+   Blur is applied to element children (`> *`) rather than the section
+   itself so the `::after` pill — a pseudo-child, not matched by `> *` —
+   stays sharp without needing a separate stacking context fight. */
+.rp-locked-blur {
+  position: relative;
+}
+.rp-locked-blur > * {
+  filter: blur(7px);
+  pointer-events: none;
+  user-select: none;
+}
+.rp-locked-blur::after {
+  content: "Unlock to read";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 14px;
+  background: var(--rp-ink);
+  color: var(--rp-paper);
+  font-family: var(--rp-body);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  white-space: nowrap;
+  z-index: 2;
+}
+
+/* Empty placeholder for missing subject-meta values (e.g. an SAB
+   with no public address). Italic + muted color so it reads as a
+   note about why the field is empty, not as real data. */
+.rp-subject-meta-empty {
+  color: var(--rp-muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Map interaction hint — appears in the unlocked report only. Calls
+   out that pins are hoverable/tappable so visitors actually use the
+   feature instead of treating the map as static. */
+.rp-caption-hint {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  background: rgba(193, 138, 30, 0.14);
+  border-left: 2px solid var(--rp-mustard);
+  color: var(--rp-ink);
+  font-weight: 600;
+}
+
+/* Combined preview block on the locked report — wraps the rivals
+   section + recommendation in one blur with one pill, replacing the
+   four-blur layout that felt repetitive on mobile. The pill anchors
+   near the top so visitors don't have to scroll past unread blur to
+   find the "Unlock to read" cue. */
+.rp-locked-preview {
+  margin: 32px 0 8px;
+}
+.rp-locked-preview::after {
+  top: 32px;
+  transform: translateX(-50%);
+}
+.rp-locked-preview > * {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+.rp-locked-preview > *:last-child {
+  margin-bottom: 0;
+}
+
 /* --- Report — mobile responsive ---
    Targets phones (~<760px). Collapses every multi-column grid, slashes
    the desktop document paddings, scales the display-font numerics down
@@ -1942,6 +2200,27 @@ a.rp-cta-contact-value:hover { color: var(--rp-mustard); }
     align-items: flex-start;
     gap: 6px;
     font-size: 9px;
+  }
+
+  .rp-map-brand {
+    top: 8px;
+    right: 8px;
+    padding: 4px 8px;
+    font-size: 10px;
+    gap: 5px;
+  }
+  .rp-map-brand-tool { font-size: 11px; }
+
+  .rp-unlock {
+    margin-top: 28px;
+    padding: 22px 20px 20px;
+    border-left-width: 4px;
+  }
+  .rp-unlock-headline { font-size: 22px; }
+  .rp-unlock-sub { font-size: 13px; }
+  .rp-unlock-fields {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
 }
 

@@ -90,6 +90,11 @@ export async function searchPlaces(args: SearchPlacesArgs): Promise<PlaceResult[
         },
       },
       maxResultCount: Math.min(Math.max(args.maxResults ?? 20, 1), 20),
+      // Service-area businesses (junk haulers, plumbers, mobile detailers, etc.)
+      // are excluded from Text Search by default. Local ranking only makes
+      // sense if SABs are in the result set, since real customers see them
+      // when they search "near me" — exclude them and our rank is wrong.
+      includePureServiceAreaBusinesses: true,
     }),
   });
 

@@ -377,34 +377,6 @@
   opacity: 0.85;
 }
 
-/* --- Upsell highlight --- */
-.fl-upsell {
-  color: var(--fl-ink);
-  background: linear-gradient(
-    transparent 60%,
-    rgba(212, 160, 23, 0.45) 60%
-  );
-  padding: 0 2px;
-  font-weight: 700;
-  white-space: nowrap;
-  text-decoration: none;
-  transition: background 0.12s ease, color 0.12s ease;
-}
-a.fl-upsell:hover {
-  background: linear-gradient(
-    transparent 50%,
-    rgba(212, 160, 23, 0.7) 50%
-  );
-}
-.fl-why-free .fl-upsell,
-.au-upsell-blurb .fl-upsell,
-.au-next .fl-upsell {
-  color: var(--fl-gold);
-  background: transparent;
-  padding: 0;
-  font-weight: 700;
-}
-
 /* --- "Why it's free" pitch block --- */
 .fl-why-free {
   margin: 32px 0 0;
@@ -435,34 +407,6 @@ a.fl-upsell:hover {
 .fl-why-free-lead {
   margin: 4px 0 10px !important;
   font-weight: 600;
-}
-.fl-why-free-list {
-  list-style: none;
-  margin: 0 0 14px;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.fl-why-free-list li {
-  position: relative;
-  padding-left: 24px;
-  font-size: 15px;
-  line-height: 1.5;
-  color: rgba(255, 255, 255, 0.92);
-}
-.fl-why-free-list li::before {
-  content: "\2713";
-  position: absolute;
-  left: 0;
-  top: 0;
-  color: var(--fl-gold);
-  font-weight: 700;
-  font-size: 15px;
-}
-.fl-why-free-list strong {
-  color: var(--fl-paper);
-  font-weight: 700;
 }
 /* --- Inline form --- */
 .au-form-inline {

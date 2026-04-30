@@ -66,9 +66,9 @@ function MapMockup() {
       </div>
       <img
         src="/audit-sample-heatmap.webp"
-        alt="Sample local rank heatmap showing a Leitchfield car dealership ranking #2 at its own location with surrounding points ranging from top 3 to not found, plus a top competitors breakdown"
+        alt="Sample local rank heatmap showing a Leitchfield car dealership ranking #2 at its own location with surrounding points ranging from top 3 to not found"
         width={810}
-        height={970}
+        height={600}
         loading="eager"
         fetchPriority="high"
         className="fl-mockup-image"
@@ -83,11 +83,7 @@ function MapMockup() {
 export default function AuditPage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("");
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [notes, setNotes] = useState("");
   const [honeypot, setHoneypot] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +100,17 @@ export default function AuditPage() {
       setProgress(pct);
     }, 200);
     return () => clearInterval(id);
+  }, [status]);
+
+  // Scroll to top whenever the page swaps to a different view (confirm
+  // card, scanning panel). Without this, React replaces the form with
+  // the new content but the browser keeps its scroll position, so a
+  // visitor who'd scrolled down to fill out the form never sees the
+  // new view appear above them.
+  useEffect(() => {
+    if (status === "confirming" || status === "scanning") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }, [status]);
 
   async function submit(e: React.FormEvent) {
@@ -131,11 +138,7 @@ export default function AuditPage() {
         body: JSON.stringify({
           step: "resolve",
           businessName,
-          email,
-          name: name || undefined,
-          phone: phone || undefined,
           keyword,
-          notes: notes || undefined,
           honeypot: honeypot || undefined,
         }),
       });
@@ -201,11 +204,7 @@ export default function AuditPage() {
         body: JSON.stringify({
           step: "scan",
           businessName,
-          email,
-          name: name || undefined,
-          phone: phone || undefined,
           keyword,
-          notes: notes || undefined,
           target,
         }),
       });
@@ -283,7 +282,7 @@ export default function AuditPage() {
                   Find out <em>exactly</em> where you rank on Google.
                 </h1>
                 <p className="fl-hero-sub">
-                  A block-by-block map of your service area. No catch.
+                  A block-by-block map of your service area.
                 </p>
               </section>
 
@@ -353,34 +352,6 @@ export default function AuditPage() {
                   pick what shows up first, not who&rsquo;s best.
                 </p>
                 <p className="fl-why-free-lead">Studio 925 fixes that.</p>
-                <ul className="fl-why-free-list">
-                  <li>
-                    Foundation, <strong>$900</strong>. Fast, clean, and
-                    Google-ready.
-                  </li>
-                  <li>
-                    Growth, <strong>$1,800</strong>. More pages, real SEO,
-                    and lead tracking.
-                  </li>
-                </ul>
-                <p>
-                  You own everything the day it launches. No lock-in, no
-                  monthly fees.
-                </p>
-                <p>
-                  Stay on{" "}
-                  <a
-                    href="https://studio925.design/hosting-support"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="fl-upsell"
-                  >
-                    Full Support hosting
-                  </a>{" "}
-                  after launch and I add new service pages or blog content
-                  each month based on what you&rsquo;re missing, plus regular
-                  rescans to track progress.
-                </p>
                 <p>
                   You run the business. I keep customers <em>coming</em>.
                 </p>
@@ -388,9 +359,6 @@ export default function AuditPage() {
 
               <form className="au-form-inline" onSubmit={submit} noValidate>
                 <div className="au-form-label">GET YOUR FREE AUDIT</div>
-                <p className="au-form-sub">
-                  Fill this out. See your rivals in 30 seconds.
-                </p>
 
                 <label>
                   Business name
@@ -406,19 +374,6 @@ export default function AuditPage() {
                 </label>
 
                 <label>
-                  Your email
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@yourbusiness.com"
-                    autoComplete="email"
-                    disabled={isBusy}
-                  />
-                </label>
-
-                <label>
                   Keyword to track
                   <input
                     type="text"
@@ -426,43 +381,6 @@ export default function AuditPage() {
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                     placeholder="e.g., hvac near me"
-                    disabled={isBusy}
-                  />
-                </label>
-
-                <div className="au-row">
-                  <label>
-                    Your name <span className="au-opt">(optional)</span>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="First name"
-                      autoComplete="given-name"
-                      disabled={isBusy}
-                    />
-                  </label>
-
-                  <label>
-                    Phone <span className="au-opt">(optional)</span>
-                    <input
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="(270) 555-0000"
-                      autoComplete="tel"
-                      disabled={isBusy}
-                    />
-                  </label>
-                </div>
-
-                <label>
-                  Anything else? <span className="au-opt">(optional)</span>
-                  <textarea
-                    rows={3}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Service area, specific competitors, goals…"
                     disabled={isBusy}
                   />
                 </label>
