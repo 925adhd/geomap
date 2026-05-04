@@ -341,7 +341,7 @@
    Cap the width on desktop so the example doesn't dominate the page;
    on mobile it falls back to full-width inside .fl-doc. */
 .fl-mockup {
-  margin: 28px auto 0;
+  margin: 8px auto 0;
   padding: 18px 18px 16px;
   background: #f0ece0;
   border: 1px solid #cdc6b4;

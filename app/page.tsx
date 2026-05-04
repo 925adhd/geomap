@@ -65,10 +65,10 @@ function MapMockup() {
         Real heatmap from a car dealership right here in Leitchfield, KY.
       </div>
       <img
-        src="/audit-sample-heatmap.webp"
+        src="/local-rank-heatmap-leitchfield-ky.webp"
         alt="Sample local rank heatmap showing a Leitchfield car dealership ranking #2 at its own location with surrounding points ranging from top 3 to not found"
-        width={810}
-        height={600}
+        width={870}
+        height={849}
         loading="eager"
         fetchPriority="high"
         className="fl-mockup-image"
@@ -279,7 +279,7 @@ export default function AuditPage() {
                   Free ranking audit · Grayson County, KY
                 </p>
                 <h1 className="fl-hero-title">
-                  Find out <em>exactly</em> where you rank on Google.
+                  Find out <em>exactly</em> where your business shows up on Google.
                 </h1>
                 <p className="fl-hero-sub">
                   A block-by-block map of your service area.
@@ -292,7 +292,7 @@ export default function AuditPage() {
                 <section className="fl-problem">
                   <div className="fl-problem-ink">THE PROBLEM</div>
                   <p>
-                    When a customer Googles &ldquo;car dealership near
+                    When a customer Googles &ldquo;used cars near
                     me,&rdquo; the top results change based on where
                     they&rsquo;re standing. Someone three miles north of
                     you sees a different list than someone three miles
