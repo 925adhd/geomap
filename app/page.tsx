@@ -314,12 +314,11 @@ export default function AuditPage() {
                       <span className="fl-desktop-only">
                         49 scan points across a 20-mile radius around your
                         business, each showing your exact rank for the
-                        keyword customers are typing.
+                        keyword you pick.
                       </span>
                       <span className="fl-mobile-only">
                         Local heatmap of your business showing your rank in
-                        that exact area for the keyword customers are
-                        typing.
+                        that exact area for the keyword you pick.
                       </span>
                     </p>
                   </div>
@@ -417,8 +416,6 @@ export default function AuditPage() {
                   <strong>
                     Your business must have a Google Business Profile.
                   </strong>{" "}
-                  Brand-new or unlisted businesses won&rsquo;t produce
-                  useful data yet.{" "}
                   {/* GBP link gets its own line on mobile via .au-fine-gbp
                       so it doesn't dangle as orphaned text after a wrap. */}
                   <span className="au-fine-gbp">
