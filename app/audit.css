@@ -252,6 +252,19 @@
   max-width: 600px;
 }
 
+/* --- Problem + Map ordering wrapper ---
+   Mobile (default): JSX order — MapMockup first, then problem (visual hook before reading).
+   Desktop: flipped via column-reverse so problem reads first, then map (problem-solution narrative). */
+.fl-problem-map {
+  display: flex;
+  flex-direction: column;
+}
+@media (min-width: 768px) {
+  .fl-problem-map {
+    flex-direction: column-reverse;
+  }
+}
+
 /* --- Problem block --- */
 .fl-problem {
   margin: 24px 0 36px;
