@@ -292,12 +292,12 @@ export default function AuditPage() {
                 <section className="fl-problem">
                   <div className="fl-problem-ink">THE PROBLEM</div>
                   <p>
-                    When a customer Googles &ldquo;plumber near me,&rdquo;
-                    the top results change based on where they&rsquo;re
-                    standing. Someone three miles north of you sees a
-                    different list than someone three miles south.
-                    You&rsquo;re losing customers in parts of town you
-                    don&rsquo;t even know about.
+                    When a customer Googles &ldquo;car dealership near
+                    me,&rdquo; the top results change based on where
+                    they&rsquo;re standing. Someone three miles north of
+                    you sees a different list than someone three miles
+                    south. You&rsquo;re losing customers in parts of town
+                    you don&rsquo;t even know about.
                   </p>
                 </section>
               </div>
