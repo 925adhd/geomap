@@ -7,6 +7,7 @@ import type * as LeafletNS from "leaflet";
 import { generateGrid } from "@/lib/grid";
 import graysonGeometry from "@/lib/grayson-geometry.json";
 import { adminHeaders, getAdminToken } from "@/lib/admin-token";
+import { computeVisibilityScore } from "@/lib/visibility";
 import {
   gridLabel,
   type PlaceResult,
@@ -431,7 +432,15 @@ export default function AdminClient() {
   function loadScan(scan: Scan) {
     setLastScan(scan);
     renderScanPins(scan);
-    if (scan.target) drawTargetMarker(scan.target);
+    if (scan.target) {
+      setTarget(scan.target);
+      localStorage.setItem(STORAGE.business, JSON.stringify(scan.target));
+      drawTargetMarker(scan.target);
+    }
+    setKeyword(scan.keyword);
+    setGridRows(scan.gridRows);
+    setGridCols(scan.gridCols);
+    setRadiusMiles(scan.radiusMiles);
   }
 
   async function deleteScan(timestamp: string) {
@@ -906,16 +915,8 @@ function computeSummary(scan: Scan) {
     found.length > 0
       ? (found.reduce((s, p) => s + (p.rank || 0), 0) / found.length).toFixed(1)
       : "—";
-  const score =
-    valid.length > 0
-      ? Math.round(
-          valid.reduce((s, p) => {
-            if (p.rank === null) return s;
-            return s + Math.max(0, 100 - ((p.rank || 0) - 1) * 5);
-          }, 0) / valid.length
-        )
-      : 0;
-  const scoreClass = score >= 60 ? "good" : score >= 30 ? "mid" : "bad";
+  const score = computeVisibilityScore(scan.points);
+  const scoreClass = score >= 50 ? "good" : score >= 20 ? "mid" : "bad";
   return {
     valid: valid.length,
     found: found.length,

@@ -5,6 +5,7 @@ import { Fraunces, IBM_Plex_Sans } from "next/font/google";
 import { gridLabel, type Scan } from "@/lib/types";
 import graysonGeometry from "@/lib/grayson-geometry.json";
 import { supabasePublic } from "@/lib/supabase";
+import { computeVisibilityScore } from "@/lib/visibility";
 import { PrintButton } from "./print-button";
 import { ReportMap } from "./report-map";
 import { UnlockForm } from "./unlock-form";
@@ -73,29 +74,6 @@ async function getScan(timestamp: string): Promise<ScanRow | null> {
   return data as ScanRow;
 }
 
-// CTR weights for ranks 1–10. Normalized so rank-1 = 100. The curve is
-// intentionally steep — for local "near me" searches the map pack (top
-// 3) absorbs the great majority of clicks; ranks 4-10 sit below the
-// pack and most users never scroll past it. Anything 11+ or not-found
-// scores 0. The score is "% of customer attention captured vs. a
-// competitor that ranks #1 at every point".
-const CTR_WEIGHT: Record<number, number> = {
-  1: 100,
-  2: 55,
-  3: 35,
-  4: 18,
-  5: 12,
-  6: 8,
-  7: 5,
-  8: 3,
-  9: 2,
-  10: 1,
-};
-function ctrWeight(rank: number | null): number {
-  if (rank === null) return 0;
-  return CTR_WEIGHT[rank] ?? 0;
-}
-
 function buildRecommendation(args: {
   score: number;
   top3Count: number;
@@ -157,7 +135,8 @@ export default async function ReportPage({
   if (!row) notFound();
 
   const scan = row.payload;
-  const locked = !row.unlocked_at;
+  const locked =
+    !row.unlocked_at && process.env.NODE_ENV === "production";
 
   const valid = scan.points.filter((p) => !p.error);
   const found = valid.filter((p) => p.rank !== null);
@@ -168,12 +147,7 @@ export default async function ReportPage({
     found.length > 0
       ? (found.reduce((s, p) => s + (p.rank || 0), 0) / found.length).toFixed(1)
       : "-";
-  const score =
-    valid.length > 0
-      ? Math.round(
-          valid.reduce((s, p) => s + ctrWeight(p.rank), 0) / valid.length
-        )
-      : 0;
+  const score = computeVisibilityScore(scan.points);
 
   const rivalCounts = new Map<string, number>();
   for (const p of scan.points) {
@@ -533,7 +507,10 @@ export default async function ReportPage({
     >
       {!locked && (
         <div className="rp-toolbar no-print">
-          <PrintButton />
+          <PrintButton
+            businessName={scan.target.name}
+            keyword={scan.keyword}
+          />
         </div>
       )}
 
