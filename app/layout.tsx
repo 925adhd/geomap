@@ -5,6 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Grayson County Geo Tracker",
   description: "Local rank scanning for Grayson County, KY",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({
