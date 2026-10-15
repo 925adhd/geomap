@@ -99,7 +99,7 @@ function buildRecommendation(args: {
 
   // Rule 1: mostly invisible in the map pack — GBP basics are the bottleneck.
   if (score < 10 || missingPct > 50) {
-    return `Fill out every single field on your Google Business Profile, add 10 or more recent photos, and double-check your service categories. Most local searches in Grayson County aren't finding you in the map pack at all, and the GBP fix is the cheapest, fastest first move.`;
+    return `Fill out every single field on your Google Business Profile, add 10 or more recent photos, and double-check your service categories. Most searches in your area don't show you in the top 3 map results, and the GBP fix is the cheapest, fastest first move.`;
   }
 
   // Rule 2: one clearly dominant rival — point at them specifically.
@@ -109,7 +109,7 @@ function buildRecommendation(args: {
 
   // Rule 3: strong center but missing edges — needs service-area pages.
   if (score >= 35 && missingPct > 20) {
-    return `Add location-specific service pages, one for each town you serve but don't currently rank in. You hold the middle of the county, but there are ${missingCount} outer spots where you don't show up at all. Service pages tell Google your area is bigger than it currently thinks.`;
+    return `Make sure your Google Business Profile lists every town you serve as a service area, and ask customers in those outer towns for reviews. You hold the middle of the county, but there are ${missingCount} outer spots where you don't show up at all. If you add pages for specific towns, give each one real details about work you've done there, not the same page with the name swapped.`;
   }
 
   // Rule 4: visible everywhere but rarely top 3 — reviews are usually the gap.
@@ -239,13 +239,14 @@ export default async function ReportPage({
         </div>
       </div>
       <blockquote className="rp-pullquote">
-        Out of every 100 customers searching nearby, you&rsquo;re
-        capturing about <strong>{score}</strong>.{" "}
+        Your visibility score is <strong>{score}</strong> out of 100. You
+        show up in Google&rsquo;s top 3 at {top3.length} of {valid.length}{" "}
+        spots we checked.{" "}
         {score >= 50
           ? "You're winning most of the local race."
           : score >= 20
-            ? `The other ${100 - score} are going to competitors.`
-            : `The other ${100 - score} are going to competitors. Most never even see you.`}
+            ? "Everywhere else, a competitor shows up ahead of you."
+            : "At most spots, customers see your competitors first."}
       </blockquote>
     </section>
   );
@@ -422,8 +423,7 @@ export default async function ReportPage({
           service pages is the foundation; the Google Business
           Profile and directory citations compound on top of it.
           Most owners patch the GBP and stop short of the website,
-          which is the one thing Google actually reads to decide
-          you&rsquo;re real.
+          which is the foundation Google and customers check first.
         </p>
       </div>
 
@@ -435,7 +435,7 @@ export default async function ReportPage({
           <div className="rp-cta-offer-label">WEBSITE BUILD · 3 TIERS</div>
           <ul>
             <li>Custom design, 48-hour first draft</li>
-            <li>Live in about a week</li>
+            <li>Live in 1 to 2 weeks</li>
             <li>Google-ready SEO from day one</li>
             <li>You own everything after final payment</li>
           </ul>
@@ -537,7 +537,7 @@ export default async function ReportPage({
               )}
             </div>
             <div>
-              <span>Scan area</span>Grayson County, Kentucky
+              <span>Scan area</span>{scan.scanArea || "Grayson County, Kentucky"}
             </div>
             <div>
               <span>Scan points</span>

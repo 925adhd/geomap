@@ -104,6 +104,7 @@ export default function AdminClient() {
   const [candidates, setCandidates] = useState<PlaceResult[] | null>(null);
   const [businessQuery, setBusinessQuery] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [scanArea, setScanArea] = useState("Grayson County, Kentucky");
   const [gridRows, setGridRows] = useState(7);
   const [gridCols, setGridCols] = useState(7);
   const [radiusMiles, setRadiusMiles] = useState(15);
@@ -382,6 +383,7 @@ export default function AdminClient() {
       timestamp: new Date().toISOString(),
       target,
       keyword: keyword.trim(),
+      scanArea: scanArea.trim() || undefined,
       gridRows: rows,
       gridCols: cols,
       radiusMiles: miles,
@@ -574,6 +576,15 @@ export default function AdminClient() {
               placeholder="e.g., hvac near me"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
+            />
+          </label>
+          <label>
+            Scan area (shown on the report)
+            <input
+              type="text"
+              placeholder="e.g., Hardin County, Kentucky"
+              value={scanArea}
+              onChange={(e) => setScanArea(e.target.value)}
             />
           </label>
           <div className="row">

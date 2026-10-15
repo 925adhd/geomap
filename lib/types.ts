@@ -42,6 +42,9 @@ export type Scan = {
   // If unset, the report auto-generates a recommendation from the scan stats
   // (score, missing points, top rival, etc). Set this to override that.
   recommendation?: string;
+  // Place name shown as "Scan area" on the report (e.g. "Hardin County, Kentucky").
+  // Older scans without it fall back to Grayson County.
+  scanArea?: string;
 };
 
 export type HistoryEntry = {
