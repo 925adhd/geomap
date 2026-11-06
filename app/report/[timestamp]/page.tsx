@@ -126,10 +126,14 @@ function buildRecommendation(args: {
 
 export default async function ReportPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ timestamp: string }>;
+  searchParams: Promise<{ client?: string }>;
 }) {
   const { timestamp } = await params;
+  // ?client=1 is the link for existing clients: same report, no sales section.
+  const isClient = (await searchParams).client !== undefined;
   const decodedTimestamp = decodeURIComponent(timestamp);
   const row = await getScan(decodedTimestamp);
   if (!row) notFound();
@@ -574,7 +578,7 @@ export default async function ReportPage({
             {mapSection}
             {rivalsSection}
             {recommendationSection}
-            {ctaSection}
+            {!isClient && ctaSection}
           </>
         )}
 
