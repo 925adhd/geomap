@@ -153,6 +153,11 @@ export function ReportMap({
       sizePins();
       map.on("resize", sizePins);
 
+      // Which pin's hover box is open, so switching to a neighbour can
+      // wait a beat (passing over a pin on the way to a link shouldn't
+      // swap the box).
+      let openOwner: LeafletNS.Marker | null = null;
+
       for (const p of points) {
         const color = pinColor(p);
         const label = p.error ? "!" : p.rank === null ? "20+" : String(p.rank);
@@ -186,6 +191,7 @@ export function ReportMap({
             minWidth: 280,
           });
           let closeTimer: ReturnType<typeof setTimeout> | undefined;
+          let openTimer: ReturnType<typeof setTimeout> | undefined;
           const keepOpen = () => clearTimeout(closeTimer);
           const closeSoon = () => {
             clearTimeout(closeTimer);
@@ -193,10 +199,20 @@ export function ReportMap({
           };
           marker.on("mouseover", () => {
             keepOpen();
-            marker.openPopup();
+            clearTimeout(openTimer);
+            if (openOwner === marker) return;
+            const delay = openOwner ? 150 : 0;
+            openTimer = setTimeout(() => marker.openPopup(), delay);
           });
-          marker.on("mouseout", closeSoon);
+          marker.on("mouseout", () => {
+            clearTimeout(openTimer);
+            closeSoon();
+          });
+          marker.on("popupclose", () => {
+            if (openOwner === marker) openOwner = null;
+          });
           marker.on("popupopen", (e) => {
+            openOwner = marker;
             const node = (e as LeafletNS.PopupEvent).popup.getElement();
             if (!node || node.dataset.hoverBound) return;
             node.dataset.hoverBound = "1";

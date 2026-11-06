@@ -285,16 +285,25 @@ export default function AdminClient() {
       offset: [0, -8],
     });
     let closeTimer: ReturnType<typeof setTimeout> | undefined;
+    let openTimer: ReturnType<typeof setTimeout> | undefined;
     const keepOpen = () => clearTimeout(closeTimer);
     const closeSoon = () => {
       clearTimeout(closeTimer);
       closeTimer = setTimeout(() => marker.closePopup(), 250);
     };
+    // Switching from another pin's open box waits a beat, so passing over
+    // a pin on the way to a link doesn't swap the box.
     marker.on("mouseover", () => {
       keepOpen();
-      marker.openPopup();
+      clearTimeout(openTimer);
+      if (marker.isPopupOpen()) return;
+      const delay = mapRef.current?.getContainer().querySelector(".admin-popup") ? 150 : 0;
+      openTimer = setTimeout(() => marker.openPopup(), delay);
     });
-    marker.on("mouseout", closeSoon);
+    marker.on("mouseout", () => {
+      clearTimeout(openTimer);
+      closeSoon();
+    });
     // bindPopup toggles on click; reopen so a click doesn't close it.
     marker.on("click", () => marker.openPopup());
     marker.on("popupopen", (e) => {
