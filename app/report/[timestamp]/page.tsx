@@ -6,6 +6,7 @@ import { gridLabel, type Scan } from "@/lib/types";
 import graysonGeometry from "@/lib/grayson-geometry.json";
 import { supabasePublic } from "@/lib/supabase";
 import { computeVisibilityScore } from "@/lib/visibility";
+import { DEFAULT_AREA, mapsLink } from "@/lib/maps-link";
 import { PrintButton } from "./print-button";
 import { ReportMap } from "./report-map";
 import { UnlockForm } from "./unlock-form";
@@ -132,7 +133,8 @@ export default async function ReportPage({
   searchParams: Promise<{ client?: string }>;
 }) {
   const { timestamp } = await params;
-  // ?client=1 is the link for existing clients: same report, no sales section.
+  // ?client=1 is the link for existing clients: same report, no
+  // "Where to start" advice and no sales section.
   const isClient = (await searchParams).client !== undefined;
   const decodedTimestamp = decodeURIComponent(timestamp);
   const row = await getScan(decodedTimestamp);
@@ -338,6 +340,7 @@ export default async function ReportPage({
         target={scan.target}
         bounds={mapBounds}
         locked={locked}
+        area={scan.scanArea || DEFAULT_AREA}
       />
       <div className="rp-map-legend">
         <span>
@@ -393,7 +396,22 @@ export default async function ReportPage({
               <span className="rp-rival-rank">
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <span className="rp-rival-name">{rv.name}</span>
+              <span className="rp-rival-name">
+                {locked ? (
+                  rv.name
+                ) : (
+                  <a
+                    href={mapsLink(rv.name, scan.scanArea || DEFAULT_AREA)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rp-rival-link"
+                    title="Open their Google profile"
+                  >
+                    {rv.name}
+                    <span className="rp-ext" aria-hidden="true"> ↗</span>
+                  </a>
+                )}
+              </span>
               <span className="rp-rival-bar-wrap">
                 <span
                   className="rp-rival-bar"
@@ -577,7 +595,7 @@ export default async function ReportPage({
             {contextNote}
             {mapSection}
             {rivalsSection}
-            {recommendationSection}
+            {!isClient && recommendationSection}
             {!isClient && ctaSection}
           </>
         )}

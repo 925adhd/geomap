@@ -6,7 +6,31 @@ body {
   color: #e2e8f0;
 }
 
-.app { display: flex; height: 100vh; }
+.app { display: flex; height: 100vh; position: relative; }
+.app.sidebar-hidden .sidebar { display: none; }
+
+/* Edge tab that hides/shows the admin sidebar. Sits just below Leaflet's
+   zoom control so the two never overlap. */
+.sidebar-toggle {
+  position: absolute;
+  top: 90px;
+  left: 400px;
+  z-index: 1000;
+  width: 22px;
+  height: 44px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #334155;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sidebar-toggle:hover { background: #334155; color: #f8fafc; }
+.app.sidebar-hidden .sidebar-toggle { left: 0; }
 
 .sidebar {
   width: 400px;
@@ -389,6 +413,13 @@ progress { width: 100%; height: 6px; }
 .tt-head { font-weight: 700; color: #f8fafc; font-size: 13px; margin-bottom: 6px; }
 .tt-top { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: #94a3b8; font-weight: 600; margin-bottom: 4px; }
 .tt-row { display: flex; gap: 6px; align-items: baseline; font-size: 12px; line-height: 1.4; color: #e2e8f0; }
+.tt-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.tt-link:hover { color: #93c5fd; }
+.admin-popup .leaflet-popup-content-wrapper, .admin-popup .leaflet-popup-tip { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; }
+.admin-popup .leaflet-popup-content { margin: 10px 12px; font-size: 12px; min-width: 220px; }
+.admin-popup a.leaflet-popup-close-button { color: #94a3b8; }
+.tt-row.is-you { color: #fff; font-weight: 700; background: #3b82f6; border-radius: 4px; padding: 1px 6px 1px 0; margin: 1px 0; }
+.tt-row.is-you .tt-rank { color: #dbeafe; }
 .tt-rank { display: inline-block; width: 14px; color: #64748b; font-weight: 700; font-size: 11px; text-align: center; flex-shrink: 0; }
 
 .rank-pin { background: transparent !important; border: none !important; }
@@ -406,6 +437,19 @@ progress { width: 100%; height: 6px; }
   box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
 .target-pin { background: transparent !important; border: none !important; }
+.leaflet-tooltip.target-label {
+  pointer-events: none;
+  padding: 2px 8px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.leaflet-tooltip.target-label::before { display: none; }
 .target-pin-inner {
   width: 22px;
   height: 22px;
@@ -1113,7 +1157,7 @@ progress { width: 100%; height: 6px; }
 .rp-hint { font-size: 11px; color: #94a3b8; }
 
 .rp-doc {
-  max-width: 900px;
+  max-width: 1040px;
   margin: 0 auto;
   background: var(--rp-paper);
   padding: 64px 70px 48px;
@@ -1323,23 +1367,42 @@ progress { width: 100%; height: 6px; }
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-.rp-pin { background: transparent !important; border: none !important; }
+.rp-pin {
+  background: transparent !important;
+  border: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* --rp-pin is set by the map script from the spacing between points. */
 .rp-pin-inner {
-  width: 30px;
-  height: 30px;
+  width: var(--rp-pin, 30px);
+  height: var(--rp-pin, 30px);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   font-weight: 700;
-  font-size: 12px;
+  font-size: calc(var(--rp-pin, 30px) * 0.4);
+  letter-spacing: -0.02em;
   border: 2px solid white;
   box-shadow: 0 1px 4px rgba(0,0,0,0.4);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-.rp-target { background: transparent !important; border: none !important; }
+.rp-target {
+  background: transparent !important;
+  border: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Crosshair scales with the pins (2x pin size, 60px on desktop). */
+.rp-target svg {
+  width: calc(var(--rp-pin, 30px) * 2);
+  height: calc(var(--rp-pin, 30px) * 2);
+}
 .rp-realmap .leaflet-control-attribution {
   font-size: 9px;
   background: rgba(255,255,255,0.85);
@@ -1559,11 +1622,44 @@ progress { width: 100%; height: 6px; }
   white-space: normal;
 }
 
-/* On desktop the in-map tooltip is enough; the tap-to-show card under
-   the map is mobile-only (its empty state shouldn't show on a viewport
-   that already has hover). */
+/* On desktop the in-map hover box (with links) is enough; the
+   tap-to-show card under the map is mobile-only. */
 @media (min-width: 761px) {
   .rp-pin-detail { display: none; }
+}
+/* Desktop hover box: a Leaflet popup styled like the old tooltip, so
+   the mouse can move into it and click a link. */
+.rp-pin-pop .leaflet-popup-content-wrapper {
+  background: #14161a;
+  color: #faf9f5;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: var(--rp-body, system-ui), system-ui, sans-serif;
+}
+.rp-pin-pop .leaflet-popup-content { margin: 10px 12px; }
+.rp-pin-pop .leaflet-popup-tip { background: #14161a; }
+.rp-tt-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.rp-tt-link:hover { text-decoration-thickness: 2px; }
+.rp-pin-detail-link,
+.rp-rival-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.rp-pin-detail-link:hover,
+.rp-rival-link:hover { text-decoration-thickness: 2px; }
+.rp-ext { opacity: 0.6; }
+@media print {
+  .rp-rival-link { text-decoration: none; }
+  .rp-ext { display: none; }
 }
 .rp-pin-tooltip.leaflet-tooltip::before { display: none; }
 .rp-tt-list {
@@ -2132,7 +2228,8 @@ a.rp-cta-contact-value:hover { color: var(--rp-mustard); }
   /* Tooltip is hidden on mobile — the leaflet-container clips it at the
      map edges so edge pins lose half the text. Mobile users get the
      tap-driven .rp-pin-detail card under the map instead. */
-  .rp-pin-tooltip.leaflet-tooltip { display: none !important; }
+  .rp-pin-tooltip.leaflet-tooltip,
+  .rp-pin-pop { display: none !important; }
 
   .rp-rivals li {
     grid-template-columns: 32px 1fr;

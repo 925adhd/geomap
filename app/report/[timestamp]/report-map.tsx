@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type * as LeafletNS from "leaflet";
 import type { ScanPoint } from "@/lib/types";
 import graysonGeometry from "@/lib/grayson-geometry.json";
+import { mapsLink } from "@/lib/maps-link";
 
 type Props = {
   points: ScanPoint[];
@@ -16,6 +17,8 @@ type Props = {
    *  hover, click-to-detail card. The rank pin numbers themselves stay
    *  visible — that's the teaser. */
   locked?: boolean;
+  /** Scan area, added to Google Maps links so the right business opens. */
+  area?: string;
 };
 
 function pinColor(p: ScanPoint): string {
@@ -30,7 +33,11 @@ function pinColor(p: ScanPoint): string {
 // tooltip just needs to show who's actually winning #1/#2/#3 at that
 // point. If the owner *is* in top 3 we mark that row "(you)" so they
 // can pick out their own listing in the rivals list.
-function buildTooltip(p: ScanPoint, targetName: string): string {
+function buildTooltip(
+  p: ScanPoint,
+  targetName: string,
+  area?: string
+): string {
   if (p.error) {
     return `<span class="rp-tt-muted">Scan failed: ${esc(p.error)}</span>`;
   }
@@ -45,7 +52,10 @@ function buildTooltip(p: ScanPoint, targetName: string): string {
       const youTag = isYou
         ? ` <span class="rp-tt-you-tag">You</span>`
         : "";
-      return `<li${cls}><span class="rp-tt-rk">${i + 1}</span><span class="rp-tt-nm">${esc(name)}${youTag}</span></li>`;
+      const label = isYou
+        ? esc(name)
+        : `<a class="rp-tt-link" href="${esc(mapsLink(name, area))}" target="_blank" rel="noopener noreferrer">${esc(name)} <span aria-hidden="true">↗</span></a>`;
+      return `<li${cls}><span class="rp-tt-rk">${i + 1}</span><span class="rp-tt-nm">${label}${youTag}</span></li>`;
     })
     .join("");
   return `<ol class="rp-tt-list">${items}</ol>`;
@@ -71,7 +81,13 @@ function esc(s: string): string {
   );
 }
 
-export function ReportMap({ points, target, bounds, locked = false }: Props) {
+export function ReportMap({
+  points,
+  target,
+  bounds,
+  locked = false,
+  area,
+}: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletNS.Map | null>(null);
   const [selected, setSelected] = useState<ScanPoint | null>(null);
@@ -117,6 +133,26 @@ export function ReportMap({ points, target, bounds, locked = false }: Props) {
         { padding: [8, 8] }
       );
 
+      // Shrink pins to fit the gap between scan points, so dense grids on
+      // small screens don't pile up. 30px max (desktop), 16px min.
+      const sizePins = () => {
+        if (!el.current) return;
+        const px = points.map((pt) => map.latLngToContainerPoint([pt.lat, pt.lng]));
+        let gap = Infinity;
+        for (let i = 0; i < px.length; i++) {
+          for (let j = i + 1; j < px.length; j++) {
+            const d = px[i].distanceTo(px[j]);
+            if (d > 1 && d < gap) gap = d;
+          }
+        }
+        const size = Number.isFinite(gap)
+          ? Math.max(16, Math.min(30, Math.floor(gap - 2)))
+          : 30;
+        el.current.style.setProperty("--rp-pin", `${size}px`);
+      };
+      sizePins();
+      map.on("resize", sizePins);
+
       for (const p of points) {
         const color = pinColor(p);
         const label = p.error ? "!" : p.rank === null ? "20+" : String(p.rank);
@@ -137,13 +173,42 @@ export function ReportMap({ points, target, bounds, locked = false }: Props) {
           // mobile because the leaflet-container clips at the map edges,
           // so edge pins lose half the tooltip. Mobile users get the
           // detail card below the map instead (driven by marker click).
-          marker.bindTooltip(buildTooltip(p, target.name), {
-            direction: "auto",
-            offset: [0, -8],
-            className: "rp-pin-tooltip no-print",
-            opacity: 1,
+          // Desktop hover box is a Leaflet popup, not a tooltip, so the
+          // mouse can move into it and click a competitor link. A short
+          // close delay bridges the gap between pin and box. Hidden via CSS
+          // on mobile, where the card under the map is used instead.
+          marker.bindPopup(buildTooltip(p, target.name, area), {
+            className: "rp-pin-pop no-print",
+            closeButton: false,
+            autoPan: false,
+            offset: [0, -6],
+            maxWidth: 360,
+            minWidth: 280,
           });
-          marker.on("click", () => setSelected(p));
+          let closeTimer: ReturnType<typeof setTimeout> | undefined;
+          const keepOpen = () => clearTimeout(closeTimer);
+          const closeSoon = () => {
+            clearTimeout(closeTimer);
+            closeTimer = setTimeout(() => marker.closePopup(), 250);
+          };
+          marker.on("mouseover", () => {
+            keepOpen();
+            marker.openPopup();
+          });
+          marker.on("mouseout", closeSoon);
+          marker.on("popupopen", (e) => {
+            const node = (e as LeafletNS.PopupEvent).popup.getElement();
+            if (!node || node.dataset.hoverBound) return;
+            node.dataset.hoverBound = "1";
+            node.addEventListener("mouseenter", keepOpen);
+            node.addEventListener("mouseleave", closeSoon);
+          });
+          // bindPopup toggles on click; reopen so a click on desktop
+          // doesn't close the hover box. Mobile uses the card below.
+          marker.on("click", () => {
+            setSelected(p);
+            marker.openPopup();
+          });
         }
       }
 
@@ -203,7 +268,7 @@ export function ReportMap({ points, target, bounds, locked = false }: Props) {
           <span className="rp-map-brand-domain">studio925.design</span>
         </a>
       </div>
-      {!locked && <PinDetail point={selected} targetName={target.name} />}
+      {!locked && <PinDetail point={selected} targetName={target.name} area={area} />}
     </>
   );
 }
@@ -211,14 +276,17 @@ export function ReportMap({ points, target, bounds, locked = false }: Props) {
 function PinDetail({
   point,
   targetName,
+  area,
 }: {
   point: ScanPoint | null;
   targetName: string;
+  area?: string;
 }) {
   if (!point) {
     return (
       <div className="rp-pin-detail rp-pin-detail--empty no-print">
-        Tap any pin to see who&rsquo;s ranking #1 there.
+        Tap any pin to see who&rsquo;s ranking there, with links to their
+        Google profiles.
       </div>
     );
   }
@@ -249,7 +317,19 @@ function PinDetail({
           <li key={i} className={isYou ? "is-you" : undefined}>
             <span className="rp-pin-detail-rk">{i + 1}</span>
             <span className="rp-pin-detail-nm">
-              {name}
+              {isYou ? (
+                name
+              ) : (
+                <a
+                  href={mapsLink(name, area)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rp-pin-detail-link"
+                >
+                  {name}
+                  <span aria-hidden="true"> ↗</span>
+                </a>
+              )}
               {isYou && <span className="rp-pin-detail-you"> You</span>}
             </span>
           </li>

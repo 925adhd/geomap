@@ -7,6 +7,7 @@ import type * as LeafletNS from "leaflet";
 import { generateGrid } from "@/lib/grid";
 import graysonGeometry from "@/lib/grayson-geometry.json";
 import { adminHeaders, getAdminToken } from "@/lib/admin-token";
+import { DEFAULT_AREA, mapsLink } from "@/lib/maps-link";
 import { computeVisibilityScore } from "@/lib/visibility";
 import {
   gridLabel,
@@ -19,6 +20,7 @@ import {
 const GRAYSON_CENTER: [number, number] = [37.4789, -86.3408];
 const STORAGE = {
   business: "gct_target_business",
+  sidebarHidden: "gct_sidebar_hidden",
 };
 
 async function searchPlaces(
@@ -118,6 +120,29 @@ export default function AdminClient() {
   // colour: "warn" for soft validation/save issues, "error" for hard
   // failures the operator needs to read fully.
   const [notice, setNotice] = useState<{ kind: "warn" | "error"; text: string } | null>(null);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+
+  useEffect(() => {
+    try {
+      setSidebarHidden(localStorage.getItem(STORAGE.sidebarHidden) === "1");
+    } catch {}
+  }, []);
+
+  // The map container changes width when the sidebar toggles; Leaflet
+  // has to be told so it can re-tile the new area.
+  useEffect(() => {
+    mapRef.current?.invalidateSize();
+  }, [sidebarHidden]);
+
+  function toggleSidebar() {
+    setSidebarHidden((h) => {
+      const next = !h;
+      try {
+        localStorage.setItem(STORAGE.sidebarHidden, next ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -192,13 +217,23 @@ export default function AdminClient() {
           iconAnchor: [11, 11],
         }),
         zIndexOffset: 1000,
+        // Mouse passes through so the scan pin under the business
+        // (usually the center one) can still be hovered.
+        interactive: false,
       }
     )
       .addTo(map)
-      .bindTooltip(t.name);
+      // Always-on name label below the marker; pointer-events off in CSS.
+      .bindTooltip(t.name, {
+        permanent: true,
+        direction: "bottom",
+        offset: [0, 14],
+        className: "target-label",
+        opacity: 1,
+      });
   }
 
-  function addRankPin(pt: ScanPoint) {
+  function addRankPin(pt: ScanPoint, targetName?: string) {
     const L = leafletRef.current;
     const scanLayer = scanLayerRef.current;
     if (!L || !scanLayer) return;
@@ -211,37 +246,71 @@ export default function AdminClient() {
         : pt.topResult
           ? [pt.topResult]
           : [];
-    const topBlock =
+    const norm = (s: string) =>
+      s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    // Top-3 list; other businesses link to their Google profile.
+    const topBlock = (linked: boolean) =>
       topList.length > 0
         ? `<div class="tt-top">Top ${topList.length} here:</div>` +
           topList
-            .map(
-              (name, i) =>
-                `<div class="tt-row"><span class="tt-rank">${i + 1}</span>${esc(name)}</div>`
-            )
+            .map((name, i) => {
+              const isYou = !!targetName && norm(name) === norm(targetName);
+              const label =
+                linked && !isYou
+                  ? `<a class="tt-link" href="${esc(mapsLink(name, DEFAULT_AREA))}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`
+                  : esc(name);
+              return `<div class="tt-row${isYou ? " is-you" : ""}"><span class="tt-rank">${i + 1}</span>${label}</div>`;
+            })
             .join("")
         : "";
-    const tooltip = errored
-      ? "Error: " + esc(pt.error)
-      : `<div class="tt-head">Rank: ${pt.rank === null ? "Not found in top 20" : "#" + pt.rank}</div>` +
-        topBlock;
-    L.marker([pt.lat, pt.lng], {
+    const head = `<div class="tt-head">Rank: ${pt.rank === null ? "Not found in top 20" : "#" + pt.rank}</div>`;
+    const marker = L.marker([pt.lat, pt.lng], {
       icon: L.divIcon({
         className: "rank-pin",
         html: `<div class="rank-pin-inner" style="background:${color}">${label}</div>`,
         iconSize: [30, 30],
         iconAnchor: [15, 15],
       }),
-    })
-      .addTo(scanLayer)
-      .bindTooltip(tooltip);
+    }).addTo(scanLayer);
+    if (errored) {
+      marker.bindTooltip("Error: " + esc(pt.error));
+      return;
+    }
+    // Hover box is a popup (not a tooltip) so the mouse can move into it
+    // and click a competitor link; a short delay bridges the gap.
+    marker.bindPopup(head + topBlock(true), {
+      className: "admin-popup",
+      closeButton: false,
+      autoPan: false,
+      offset: [0, -8],
+    });
+    let closeTimer: ReturnType<typeof setTimeout> | undefined;
+    const keepOpen = () => clearTimeout(closeTimer);
+    const closeSoon = () => {
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(() => marker.closePopup(), 250);
+    };
+    marker.on("mouseover", () => {
+      keepOpen();
+      marker.openPopup();
+    });
+    marker.on("mouseout", closeSoon);
+    // bindPopup toggles on click; reopen so a click doesn't close it.
+    marker.on("click", () => marker.openPopup());
+    marker.on("popupopen", (e) => {
+      const node = (e as { popup: { getElement(): HTMLElement | undefined } }).popup.getElement();
+      if (!node || node.dataset.hoverBound) return;
+      node.dataset.hoverBound = "1";
+      node.addEventListener("mouseenter", keepOpen);
+      node.addEventListener("mouseleave", closeSoon);
+    });
   }
 
   function renderScanPins(scan: Scan) {
     const scanLayer = scanLayerRef.current;
     if (!scanLayer) return;
     scanLayer.clearLayers();
-    scan.points.forEach(addRankPin);
+    scan.points.forEach((p) => addRankPin(p, scan.target?.name));
   }
 
   async function findBusiness() {
@@ -348,13 +417,13 @@ export default function AdminClient() {
           .filter((n): n is string => !!n);
         const result: ScanPoint = { ...pt, rank, topResult, topThree };
         results.push(result);
-        addRankPin(result);
+        addRankPin(result, target.name);
       } catch (e) {
         const msg = (e as Error).message;
         if (!msg.toLowerCase().includes("budget")) proCalls += 1;
         const result: ScanPoint = { ...pt, rank: null, error: msg };
         results.push(result);
-        addRankPin(result);
+        addRankPin(result, target.name);
         if (i === 0) {
           setNotice({
             kind: "error",
@@ -484,8 +553,8 @@ export default function AdminClient() {
   if (!authed) return null;
 
   return (
-    <div className="app">
-      <aside className="sidebar">
+    <div className={`app${sidebarHidden ? " sidebar-hidden" : ""}`}>
+      <aside className="sidebar" id="admin-sidebar">
         <h1>
           Grayson County Geo Tracker
           <Link href="/help" className="help-icon" title="How does this work?" aria-label="Help">
@@ -808,6 +877,17 @@ export default function AdminClient() {
           )}
         </section>
       </aside>
+
+      <button
+        type="button"
+        className="sidebar-toggle"
+        onClick={toggleSidebar}
+        aria-controls="admin-sidebar"
+        aria-expanded={!sidebarHidden}
+        title={sidebarHidden ? "Show panel" : "Hide panel"}
+      >
+        {sidebarHidden ? "›" : "‹"}
+      </button>
 
       <div ref={mapEl} className="map-wrap" />
     </div>
