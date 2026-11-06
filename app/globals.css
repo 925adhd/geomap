@@ -1639,16 +1639,17 @@ progress { width: 100%; height: 6px; }
   font-family: var(--rp-body, system-ui), system-ui, sans-serif;
 }
 .rp-pin-pop .leaflet-popup-content { margin: 10px 12px; }
-/* Only the links catch the mouse; the rest of the box lets it through to
-   the pins underneath, so a neighbouring pin can be hovered directly. */
+/* Only the list of names catches the mouse (so crossing a non-link row
+   doesn't close the box); the box's edges let it through to the pins
+   underneath, so a neighbouring pin can be hovered directly. */
 .rp-pin-pop,
 .rp-pin-pop *,
 .admin-popup,
 .admin-popup * { pointer-events: none !important; }
-.rp-pin-pop a,
-.rp-pin-pop a *,
-.admin-popup a,
-.admin-popup a * { pointer-events: auto !important; }
+.rp-pin-pop .rp-tt-list,
+.rp-pin-pop .rp-tt-list *,
+.admin-popup .tt-row,
+.admin-popup .tt-row * { pointer-events: auto !important; }
 .rp-pin-pop .leaflet-popup-tip { background: #14161a; }
 .rp-tt-link {
   color: inherit;

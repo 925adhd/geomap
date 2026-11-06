@@ -195,7 +195,7 @@ export function ReportMap({
           const keepOpen = () => clearTimeout(closeTimer);
           const closeSoon = () => {
             clearTimeout(closeTimer);
-            closeTimer = setTimeout(() => marker.closePopup(), 250);
+            closeTimer = setTimeout(() => marker.closePopup(), 400);
           };
           marker.on("mouseover", () => {
             keepOpen();

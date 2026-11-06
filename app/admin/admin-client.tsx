@@ -289,7 +289,7 @@ export default function AdminClient() {
     const keepOpen = () => clearTimeout(closeTimer);
     const closeSoon = () => {
       clearTimeout(closeTimer);
-      closeTimer = setTimeout(() => marker.closePopup(), 250);
+      closeTimer = setTimeout(() => marker.closePopup(), 400);
     };
     // Switching from another pin's open box waits a beat, so passing over
     // a pin on the way to a link doesn't swap the box.
